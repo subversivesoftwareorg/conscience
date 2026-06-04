@@ -8,7 +8,7 @@ project:
       description: "People responsible for team health, growth, and ethical technology use"
     - name: "End users of products built with AI"
       description: "Indirect beneficiaries — better team reflection leads to better products"
-  # github_repo: "subversivesoftwareorg/conscience"
+  github_repo: "subversivesoftwareorg/conscience"
   cost_bearers:
     - name: "Engineering team time"
       description: "Time spent on reflection and maintaining conscience.yaml"
