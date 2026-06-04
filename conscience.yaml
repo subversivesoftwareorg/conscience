@@ -1,0 +1,52 @@
+project:
+  name: "Conscience"
+  mission: "Help teams evaluate whether their AI-assisted work serves human flourishing, not just velocity"
+  beneficiaries:
+    - name: "Engineering teams"
+      description: "Teams using AI coding tools who want to reflect on impact, not just ship faster"
+    - name: "Engineering leaders"
+      description: "People responsible for team health, growth, and ethical technology use"
+    - name: "End users of products built with AI"
+      description: "Indirect beneficiaries — better team reflection leads to better products"
+  # github_repo: "subversivesoftwareorg/conscience"
+  cost_bearers:
+    - name: "Engineering team time"
+      description: "Time spent on reflection and maintaining conscience.yaml"
+    - name: "AI compute"
+      description: "Token consumption for Claude Code sessions building this tool"
+
+value_categories:
+  - name: "ethics"
+    value_type: human_good
+    description: "Ethical analysis features — the core mission"
+  - name: "data-ingestion"
+    value_type: growth
+    description: "Pulling data from GitHub, AI tools, project management"
+  - name: "reporting"
+    value_type: human_good
+    description: "Making data understandable and actionable"
+  - name: "infrastructure"
+    value_type: growth
+    description: "CLI framework, configuration, build system"
+
+team:
+  size: 1
+  roles:
+    senior: 1
+    mid: 0
+    junior: 0
+  learning_goals:
+    - "Understand what ethical AI evaluation looks like in practice"
+    - "Build a tool that others find genuinely useful for reflection"
+
+monthly_review:
+  last_updated: "2026-06-03"
+  value_delivered: "Built foundational CLI with GitHub ingestion, Claude Code log parsing, and three-layer ethical analysis (signals, scorecard, reflections). Project bootstrapped from zero to working tool in one session."
+  revenue_impact: "No revenue yet — this is an inception-phase project. Future model TBD."
+  growth_observations: "This project was built almost entirely with AI assistance (Claude Code). The human directed architecture, chose the ethical framework, and made all design decisions. AI handled implementation details and boilerplate."
+  ethical_notes: "Meta-observation: we are using AI to build a tool that evaluates AI usage. The irony is noted and intentional. The conscience.yaml itself is an exercise in the transparency we advocate."
+  ai_sentiment: "mostly_positive"
+
+thresholds:
+  contribution_concentration_warn: 0.80
+  solo_project: true

@@ -1,0 +1,126 @@
+# Conscience — Ethical Analysis for AI-Assisted Work
+#
+# Copy this workflow into your repo's .github/workflows/ directory.
+# It runs ethical analysis on PRs and weekly, posting results as
+# GitHub annotations and PR comments.
+#
+# Prerequisites:
+# - conscience CLI installed (cargo install conscience)
+# - A conscience.yaml in your repo root (optional but recommended)
+#
+# The GITHUB_TOKEN secret is provided automatically by GitHub Actions.
+
+name: Conscience Ethical Analysis
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  schedule:
+    # Weekly Monday at 9am UTC
+    - cron: '0 9 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  examine:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Conscience
+        run: cargo install conscience
+
+      - name: Run Ethical Analysis
+        env:
+          CONSCIENCE_GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          conscience examine \
+            --repo ${{ github.repository }} \
+            --days 30 \
+            --project . \
+            --json > conscience-output.json
+
+      - name: Generate Annotations
+        run: |
+          python3 -c "
+          import json
+          data = json.load(open('conscience-output.json'))
+          for s in data.get('signals', []):
+              sev = s.get('severity', 'info')
+              level = 'warning' if sev in ('warning', 'concern') else 'notice'
+              title = s.get('title', '')
+              principle = s.get('principle', '')
+              detail = s.get('detail', '')
+              print(f'::{level} title={title}::[{principle}] {detail}')
+          "
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 << 'PYEOF' > comment.md
+          import json
+
+          data = json.load(open('conscience-output.json'))
+          signals = data.get('signals', [])
+          scorecard = data.get('scorecard', [])
+
+          warnings = [s for s in signals if s['severity'] in ('warning', 'concern')]
+          healthy = [s for s in signals if s['severity'] == 'healthy']
+
+          body = '## Conscience Ethical Analysis\n\n'
+
+          if warnings:
+              body += f'**{len(warnings)} signal(s) need attention:**\n\n'
+              for s in warnings:
+                  icon = '🔴' if s['severity'] == 'warning' else '🟡'
+                  body += f'{icon} **{s["title"]}** [{s["principle"]}]\n'
+                  body += f'> {s["detail"]}\n\n'
+          else:
+              body += '✅ No concerns detected.\n\n'
+
+          if healthy:
+              body += f'**{len(healthy)} healthy signal(s):**\n\n'
+              for s in healthy:
+                  body += f'🟢 {s["title"]}\n'
+              body += '\n'
+
+          body += '<details><summary>Full Scorecard</summary>\n\n'
+          body += '| Principle | Signals | Status |\n'
+          body += '|-----------|---------|--------|\n'
+          for d in scorecard:
+              name = d.get('principle', '')
+              count = len(d.get('auto_signals', []))
+              needs_human = d.get('needs_human_input', False)
+              if count == 0 and needs_human:
+                  status = 'Needs human input'
+              elif count == 0:
+                  status = 'No data'
+              else:
+                  severities = [s['severity'] for s in d['auto_signals']]
+                  if 'warning' in severities:
+                      status = '🔴 WARNING'
+                  elif 'concern' in severities:
+                      status = '🟡 CONCERN'
+                  elif 'info' in severities:
+                      status = 'ℹ️ INFO'
+                  else:
+                      status = '🟢 HEALTHY'
+              body += f'| {name} | {count} | {status} |\n'
+          body += '\n</details>\n'
+
+          print(body)
+          PYEOF
+
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body-file comment.md \
+            --edit-last 2>/dev/null || \
+          gh pr comment ${{ github.event.pull_request.number }} \
+            --body-file comment.md

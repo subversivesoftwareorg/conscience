@@ -1,0 +1,149 @@
+# conscience.yaml — Human-provided context for ethical analysis
+#
+# This file bridges automated metrics (commits, tokens, PRs) with
+# human judgment about what the work means. Conscience can detect
+# patterns in code activity; only you can say who it serves and why.
+#
+# Review monthly. Changes are tracked in git — your ethical reasoning
+# should be as versioned as your code.
+
+# --- Project Identity ---
+# Who is this for, and what problem does it solve?
+
+project:
+  name: "Your Project Name"
+  mission: "One sentence: what does this project do for the people who use it?"
+
+  # GitHub repository (owner/repo). Used by examine-all for auto-enrichment.
+  # github_repo: "your-org/your-repo"
+
+  # Who benefits from this project? Be specific.
+  # The encyclical asks: "Does it serve users broadly, or only
+  # high-value accounts?" (cf. MH 77)
+  beneficiaries:
+    - name: "Primary users"
+      description: "Who they are and how the project helps them"
+    # - name: "Secondary beneficiaries"
+    #   description: "Indirect beneficiaries"
+
+  # Who bears the costs? Often invisible.
+  # "The digital economy's functioning relies on the silent work
+  # of millions" (MH 173)
+  cost_bearers:
+    - name: "Engineering team"
+      description: "Time and cognitive load of building and maintaining"
+    # - name: "End users"
+    #   description: "Data collection, attention, privacy trade-offs"
+
+# --- Value Categories ---
+# Tag PRs and features with these categories to map AI-assisted work
+# to the value it delivers. Use GitHub labels matching these names,
+# or tag work manually in monthly reviews.
+#
+# Each category has a 'value_type' to help Conscience interpret it:
+#   revenue    — directly drives or protects revenue
+#   cost       — reduces operational cost
+#   safety     — prevents harm, reduces risk
+#   growth     — enables future capability
+#   human_good — serves users, accessibility, equity
+
+value_categories:
+  - name: "revenue"
+    value_type: revenue
+    description: "Features that directly drive or protect revenue"
+    # examples: "billing improvements, pricing changes, sales tools"
+
+  - name: "security"
+    value_type: safety
+    description: "Vulnerability fixes, compliance, audit readiness"
+
+  - name: "infrastructure"
+    value_type: growth
+    description: "Build systems, CI/CD, developer tooling, refactoring"
+
+  - name: "user-facing"
+    value_type: human_good
+    description: "Features that directly improve the user experience"
+
+  - name: "accessibility"
+    value_type: human_good
+    description: "Making the product usable by more people"
+
+  # Add your own categories. The names should match GitHub labels
+  # when possible so Conscience can auto-categorize PRs.
+
+# --- Team Context ---
+# Conscience needs to know team structure to detect equity issues.
+# You don't need to list individuals — role counts are enough.
+
+team:
+  size: 5
+  # Approximate breakdown. Conscience uses this to contextualize
+  # contribution concentration signals.
+  roles:
+    senior: 2
+    mid: 2
+    junior: 1
+
+  # Are there explicit learning goals for AI adoption?
+  # If yes, Conscience will look for signals of whether they're being met.
+  learning_goals:
+    - "Junior developers should be authoring PRs, not just reviewing AI output"
+    # - "All team members should be able to work without AI tools when needed"
+
+# --- Monthly Review ---
+# These fields are updated monthly. They're the human half of the analysis
+# that automated tools can't provide.
+#
+# Conscience will remind you to update these if they're stale.
+
+monthly_review:
+  last_updated: "2026-06-03"
+
+  # What value did the team deliver this month? Not a list of PRs —
+  # a statement about impact.
+  value_delivered: ""
+  # Example: "Shipped SSO integration that unblocked 3 enterprise deals.
+  # Fixed accessibility issues reported by screen reader users."
+
+  # Revenue or business impact, if known. Can be qualitative.
+  revenue_impact: ""
+  # Example: "SSO unblocked ~$150K in pipeline. No direct revenue
+  # from accessibility work, but it's the right thing to do."
+
+  # What did the team learn? Are people growing?
+  growth_observations: ""
+  # Example: "Two juniors paired on the SSO feature using Claude Code.
+  # They understood the auth flow afterward — AI helped them learn,
+  # not just ship."
+
+  # Ethical concerns or observations. What felt off? What felt right?
+  ethical_notes: ""
+  # Example: "Noticed we're using AI for boilerplate but still
+  # designing architecture ourselves. Feels like the right balance."
+
+  # Overall sentiment: is AI helping the team flourish?
+  # Options: flourishing, mostly_positive, mixed, concerning, harmful
+  ai_sentiment: ""
+
+# --- Thresholds ---
+# Override default signal thresholds if the defaults don't fit your context.
+# For example, a solo founder project should not warn about contribution
+# concentration.
+
+thresholds:
+  # Percentage of commits from top 2 contributors before flagging
+  contribution_concentration_warn: 0.80
+  # contribution_concentration_concern: 0.60
+
+  # AI:Human turn ratio before flagging
+  # ai_dependency_concern: 3.0
+  # ai_dependency_info: 2.0
+
+  # Security thresholds
+  # tokens_per_file_warn: 100000    # output tokens per file touched
+  # tokens_per_turn_warn: 20000     # output tokens per assistant turn
+  # max_session_hours: 12.0         # flag sessions longer than this
+
+  # Set to true if this is a solo/small project where concentration is expected
+  # solo_project: false
