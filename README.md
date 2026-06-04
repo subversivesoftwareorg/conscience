@@ -16,15 +16,20 @@ This is a discernment tool, not a surveillance tool. It is designed for teams to
 
 ## Install
 
-```
+```bash
+# From GitHub (recommended for now)
+cargo install --git https://github.com/subversivesoftwareorg/conscience
+
+# From crates.io (once published)
+cargo install conscience
+
+# From source
+git clone https://github.com/subversivesoftwareorg/conscience
+cd conscience
 cargo install --path .
 ```
 
-Or build from source:
-
-```
-cargo build --release
-```
+Prebuilt binaries for Linux and macOS are available on the [Releases page](https://github.com/subversivesoftwareorg/conscience/releases).
 
 ## Quick Start
 
@@ -254,4 +259,4 @@ Areas where contributions are especially welcome:
 
 ## License
 
-TBD
+MIT

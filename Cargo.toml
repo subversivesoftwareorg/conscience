@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 description = "Evaluate the impact of AI-assisted work — measuring velocity, quality, business value, developer experience, and ethical implications"
 license = "MIT"
+repository = "https://github.com/subversivesoftwareorg/conscience"
+homepage = "https://github.com/subversivesoftwareorg/conscience"
+keywords = ["ai", "ethics", "analysis", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+exclude = ["refs/"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }

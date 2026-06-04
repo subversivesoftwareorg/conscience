@@ -1,12 +1,10 @@
 # Conscience — Ethical Analysis for AI-Assisted Work
 #
-# Copy this workflow into your repo's .github/workflows/ directory.
-# It runs ethical analysis on PRs and weekly, posting results as
-# GitHub annotations and PR comments.
+# This workflow runs ethical analysis on PRs and weekly.
 #
-# Prerequisites:
-# - conscience CLI installed (cargo install conscience)
-# - A conscience.yaml in your repo root (optional but recommended)
+# For OTHER repos: copy this file and change the Install step to:
+#   cargo install conscience                         # from crates.io
+#   cargo install --git https://github.com/subversivesoftwareorg/conscience  # from git
 #
 # The GITHUB_TOKEN secret is provided automatically by GitHub Actions.
 
@@ -34,7 +32,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install Conscience
-        run: cargo install conscience
+        run: |
+          if [ -f Cargo.toml ] && grep -q 'name = "conscience"' Cargo.toml; then
+            cargo install --path .
+          else
+            cargo install --git https://github.com/subversivesoftwareorg/conscience
+          fi
 
       - name: Run Ethical Analysis
         env:
