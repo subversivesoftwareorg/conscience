@@ -11,6 +11,7 @@ permissions:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
@@ -19,12 +20,13 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             artifact: conscience-linux-arm64
-          - target: x86_64-apple-darwin
-            os: macos-latest
-            artifact: conscience-macos-amd64
+            cross: true
           - target: aarch64-apple-darwin
             os: macos-latest
             artifact: conscience-macos-arm64
+          - target: x86_64-apple-darwin
+            os: macos-13
+            artifact: conscience-macos-amd64
 
     runs-on: ${{ matrix.os }}
 
@@ -36,15 +38,17 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install cross-compilation tools
-        if: matrix.target == 'aarch64-unknown-linux-gnu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gcc-aarch64-linux-gnu
-          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> $GITHUB_ENV
+      - name: Install cross
+        if: matrix.cross
+        run: cargo install cross
 
-      - name: Build
+      - name: Build (native)
+        if: ${{ !matrix.cross }}
         run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build (cross)
+        if: matrix.cross
+        run: cross build --release --target ${{ matrix.target }}
 
       - name: Package
         run: |
@@ -73,16 +77,13 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Flatten artifact directories
           mkdir -p release
           find dist -type f -name 'conscience-*' -exec cp {} release/ \;
 
-          # Generate checksums
           cd release
           sha256sum conscience-* > checksums.txt
           cd ..
 
-          # Create release with all binaries
           gh release create ${{ github.ref_name }} \
             --title "Conscience ${{ github.ref_name }}" \
             --generate-notes \
