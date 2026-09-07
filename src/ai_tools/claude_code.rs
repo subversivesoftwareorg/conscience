@@ -116,6 +116,8 @@ impl ClaudeCodeParser {
         let mut git_branch: Option<String> = None;
         let mut started_at: Option<DateTime<Utc>> = None;
         let mut ended_at: Option<DateTime<Utc>> = None;
+        let mut interactions: Vec<Interaction> = Vec::new();
+        let mut last_event_ts: Option<DateTime<Utc>> = None;
 
         for line in reader.lines() {
             let line = match line {
@@ -141,6 +143,24 @@ impl ClaudeCodeParser {
                     if ended_at.is_none() || dt > ended_at.unwrap() {
                         ended_at = Some(dt);
                     }
+
+                    if msg_type == "user" && Self::is_human_prompt(&value) {
+                        if let Some(open) = interactions.last_mut() {
+                            if open.ai_until.is_none() {
+                                open.ai_until = last_event_ts;
+                            }
+                        }
+                        interactions.push(Interaction {
+                            human_at: dt,
+                            ai_until: None,
+                            uuid: value
+                                .get("uuid")
+                                .and_then(|v| v.as_str())
+                                .map(String::from),
+                        });
+                    }
+
+                    last_event_ts = Some(dt);
                 }
             }
 
@@ -224,6 +244,12 @@ impl ClaudeCodeParser {
             }
         }
 
+        if let Some(open) = interactions.last_mut() {
+            if open.ai_until.is_none() {
+                open.ai_until = last_event_ts;
+            }
+        }
+
         Ok(AiSession {
             tool: AiTool::ClaudeCode,
             session_id: session_id.to_string(),
@@ -249,6 +275,7 @@ impl ClaudeCodeParser {
             bash_commands,
             agent_actions: Vec::new(),
             git_branch,
+            interactions,
         })
     }
 }

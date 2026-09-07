@@ -40,6 +40,7 @@ fn make_session_at(
         bash_commands: Vec::new(),
         agent_actions: Vec::new(),
         git_branch: Some("main".to_string()),
+        interactions: Vec::new(),
     }
 }
 

@@ -60,6 +60,14 @@ impl std::fmt::Display for WorkCategory {
     }
 }
 
+/// One human prompt and the approximate span the AI worked on it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Interaction {
+    pub human_at: DateTime<Utc>,
+    pub ai_until: Option<DateTime<Utc>>,
+    pub uuid: Option<String>,
+}
+
 /// A single session of AI-assisted work, normalized across all tools.
 ///
 /// This is the common currency of Conscience — every tool-specific parser
@@ -81,6 +89,8 @@ pub struct AiSession {
     pub bash_commands: Vec<String>,
     pub agent_actions: Vec<AgentAction>,
     pub git_branch: Option<String>,
+    #[serde(default)]
+    pub interactions: Vec<Interaction>,
 }
 
 /// An action taken by an autonomous AI agent that affects the outside world.

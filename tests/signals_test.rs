@@ -82,6 +82,7 @@ fn make_ai_session(
         bash_commands: bash_cmds,
         agent_actions: Vec::new(),
         git_branch: Some("main".to_string()),
+        interactions: Vec::new(),
     }
 }
 
