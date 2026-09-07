@@ -54,6 +54,23 @@ conscience examine --project /path/to/project
 conscience examine --repo your-org/your-repo --json
 ```
 
+### Team Reflection
+
+Generate just the reflection questions, formatted for a retrospective. Works with
+no data at all — the questions stand on their own — but GitHub activity, AI session
+logs, and a `conscience.yaml` manifest enrich them with real context:
+
+```
+# Questions enriched with GitHub and AI session data
+conscience reflect --repo your-org/your-repo --project /path/to/project
+
+# Bare questions, no data required
+conscience reflect
+
+# JSON output
+conscience reflect --project /path/to/project --json
+```
+
 ### GitHub Reports
 
 ```

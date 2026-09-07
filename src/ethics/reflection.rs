@@ -118,7 +118,11 @@ fn build_who_benefits_reflection(
     if let Some(m) = manifest {
         if !m.project.beneficiaries.is_empty() {
             let names: Vec<_> = m.project.beneficiaries.iter().map(|b| b.name.as_str()).collect();
-            context = format!("{}. Stated beneficiaries: {}", context, names.join(", "));
+            context = format!(
+                "{}. Stated beneficiaries: {}",
+                context.trim_end_matches('.'),
+                names.join(", ")
+            );
         }
     }
 

@@ -162,6 +162,9 @@ conscience report ai [--tool claude-code] [--project <path>]
 # Ethical Analysis (signals + scorecard + reflection questions)
 conscience examine [--repo <owner/repo>] [--project <path>] [--days 30] [--json]
 
+# Reflection questions for team retrospectives (works with zero data; data enriches)
+conscience reflect [--repo <owner/repo>] [--project <path>] [--days 30] [--json]
+
 # Cross-project analysis across all Claude Code projects
 conscience examine-all [--days 30] [--json]
 
@@ -172,7 +175,7 @@ conscience push --repo <owner/repo> --project <path> [--endpoint <url>]
 ### Planned Commands
 ```
 conscience evaluate --pr <url>
-conscience reflect --interactive    # guided team retrospective
+conscience reflect --interactive    # per-question input and session summary
 ```
 
 ## References

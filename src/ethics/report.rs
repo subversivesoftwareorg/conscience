@@ -103,16 +103,31 @@ fn print_scorecard(scorecard: &[DimensionScore]) {
 
 fn print_reflections(reflections: &[ReflectionQuestion]) {
     println!();
-    println!("  Reflection Questions");
-    println!("  For team discussion \u{2014} not automated judgment.");
-    println!();
+    print!("{}", render_reflection_session(reflections));
+}
+
+/// Render reflection questions as a retrospective-friendly session,
+/// used by both `examine` and the standalone `reflect` command.
+pub fn render_reflection_session(reflections: &[ReflectionQuestion]) -> String {
+    use std::fmt::Write;
+
+    let mut out = String::new();
+    let _ = writeln!(out, "  Reflection Questions");
+    let _ = writeln!(
+        out,
+        "  For team discussion \u{2014} not automated judgment."
+    );
+    let _ = writeln!(out);
 
     for (i, q) in reflections.iter().enumerate() {
-        println!("  {}. {} [{}]", i + 1, q.principle.name(), q.principle.name());
-        println!("     Data: {}", q.data_context);
-        println!("     Q: {}", q.question);
-        println!();
+        let _ = writeln!(out, "  {}. {}", i + 1, q.principle.name());
+        let _ = writeln!(out, "     Source: {}", q.principle.source());
+        let _ = writeln!(out, "     Data: {}", q.data_context);
+        let _ = writeln!(out, "     Q: {}", q.question);
+        let _ = writeln!(out);
     }
+
+    out
 }
 
 pub fn print_multi_project_analysis(analysis: &MultiProjectAnalysis) {

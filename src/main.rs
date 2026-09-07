@@ -71,6 +71,21 @@ enum Commands {
         #[arg(long)]
         endpoint: Option<String>,
     },
+    /// Generate reflection questions for a team retrospective
+    Reflect {
+        /// GitHub repository (owner/repo) to enrich questions with activity data
+        #[arg(long)]
+        repo: Option<String>,
+        /// Number of days to look back for GitHub data
+        #[arg(long, default_value = "30")]
+        days: u32,
+        /// Project directory to filter AI logs
+        #[arg(long)]
+        project: Option<PathBuf>,
+        /// Output as JSON instead of formatted text
+        #[arg(long)]
+        json: bool,
+    },
     /// Ethical analysis: signals, scorecard, and reflection questions
     Examine {
         /// GitHub repository (owner/repo)
@@ -177,6 +192,12 @@ async fn main() {
             project,
             json,
         } => run_examine(repo.as_deref(), days, project.as_deref(), json).await,
+        Commands::Reflect {
+            repo,
+            days,
+            project,
+            json,
+        } => run_reflect(repo.as_deref(), days, project.as_deref(), json).await,
     };
 
     if let Err(e) = result {
@@ -335,6 +356,59 @@ async fn run_examine_all(
         println!("{}", serde_json::to_string_pretty(&analysis)?);
     } else {
         ethics::report::print_multi_project_analysis(&analysis);
+    }
+
+    Ok(())
+}
+
+async fn run_reflect(
+    repo: Option<&str>,
+    days: u32,
+    project: Option<&std::path::Path>,
+    json_output: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()?;
+    let manifest_dir = project.unwrap_or(&cwd);
+    let manifest = ethics::manifest::Manifest::load(manifest_dir);
+
+    let github_summary = if let Some(r) = repo {
+        Some(ingest::github::ingest_github(r, days).await?)
+    } else {
+        None
+    };
+
+    let ai_summary = {
+        let summary = ingest::ai::ingest_claude_code(project)?;
+        if summary.session_count > 0 {
+            Some(summary)
+        } else {
+            None
+        }
+    };
+
+    // Unlike examine, reflect is useful with no data at all — the
+    // questions stand on their own, data only enriches them.
+    if github_summary.is_none() && ai_summary.is_none() {
+        eprintln!(
+            "No GitHub or AI session data found; questions will lack data context. \
+            Provide --repo and/or --project to enrich them."
+        );
+    }
+
+    let reflections = ethics::reflection::generate_reflections(
+        github_summary.as_ref(),
+        ai_summary.as_ref(),
+        manifest.as_ref(),
+    );
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&reflections)?);
+    } else {
+        println!();
+        print!(
+            "{}",
+            ethics::report::render_reflection_session(&reflections)
+        );
     }
 
     Ok(())
