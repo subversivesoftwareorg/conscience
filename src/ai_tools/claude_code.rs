@@ -76,6 +76,25 @@ impl ClaudeCodeParser {
         sessions
     }
 
+    pub fn parse_session_file(&self, session_id: &str, path: &Path) -> Result<AiSession> {
+        self.parse_session(session_id, path)
+    }
+
+    fn is_human_prompt(value: &Value) -> bool {
+        if value.get("isSidechain").and_then(|v| v.as_bool()).unwrap_or(false) {
+            return false;
+        }
+        if value.get("isMeta").and_then(|v| v.as_bool()).unwrap_or(false) {
+            return false;
+        }
+        match value.get("message").and_then(|m| m.get("content")).and_then(|c| c.as_str()) {
+            Some(text) => {
+                !text.starts_with("Caveat:") && !text.starts_with("<local-command-stdout>")
+            }
+            None => false,
+        }
+    }
+
     fn parse_session(&self, session_id: &str, path: &Path) -> Result<AiSession> {
         let file = fs::File::open(path)
             .map_err(|e| ConscienceError::Other(anyhow::anyhow!("Failed to open {:?}: {}", path, e)))?;
@@ -83,6 +102,7 @@ impl ClaudeCodeParser {
 
         let mut human_turns = 0u64;
         let mut assistant_turns = 0u64;
+        let mut machine_turns = 0u64;
         let mut input_tokens = 0u64;
         let mut output_tokens = 0u64;
         let mut cache_creation = 0u64;
@@ -126,7 +146,13 @@ impl ClaudeCodeParser {
 
             match msg_type {
                 "user" => {
-                    human_turns += 1;
+                    if value.get("isSidechain").and_then(|v| v.as_bool()).unwrap_or(false) {
+                        // Sidechain user events are neither human nor machine
+                    } else if Self::is_human_prompt(&value) {
+                        human_turns += 1;
+                    } else {
+                        machine_turns += 1;
+                    }
                     if project_path.is_none() {
                         project_path = value
                             .get("cwd")
@@ -141,6 +167,9 @@ impl ClaudeCodeParser {
                     }
                 }
                 "assistant" => {
+                    if value.get("isSidechain").and_then(|v| v.as_bool()).unwrap_or(false) {
+                        continue;
+                    }
                     assistant_turns += 1;
 
                     let msg = value.get("message").unwrap_or(&Value::Null);
@@ -206,6 +235,7 @@ impl ClaudeCodeParser {
             turns: TurnCounts {
                 human: human_turns,
                 assistant: assistant_turns,
+                machine: machine_turns,
                 total: human_turns + assistant_turns,
             },
             tokens: TokenUsage {
@@ -256,6 +286,7 @@ impl AiToolParser for ClaudeCodeParser {
 
                     total_turns.human += session.turns.human;
                     total_turns.assistant += session.turns.assistant;
+                    total_turns.machine += session.turns.machine;
                     total_turns.total += session.turns.total;
 
                     if let Some(ref m) = session.model {

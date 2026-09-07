@@ -75,7 +75,7 @@ fn make_ai_session(
         ended_at: Some(now),
         model: Some("claude-opus-4-6".to_string()),
         work_categories: vec![WorkCategory::Code],
-        turns: TurnCounts { human: human_turns, assistant: assistant_turns, total: human_turns + assistant_turns },
+        turns: TurnCounts { human: human_turns, assistant: assistant_turns, machine: 0, total: human_turns + assistant_turns },
         tokens: TokenUsage { input: 100, output: output_tokens, cache_creation: 0, cache_read: 0 },
         tools_used,
         files_touched: files,

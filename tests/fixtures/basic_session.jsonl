@@ -1,0 +1,8 @@
+{"type":"user","uuid":"u1","timestamp":"2026-09-01T16:40:34.873Z","isSidechain":false,"cwd":"/home/dev/projA","message":{"role":"user","content":"please fix the bug"}}
+{"type":"assistant","uuid":"a1","timestamp":"2026-09-01T16:40:43.409Z","isSidechain":false,"message":{"model":"claude-fable-5","usage":{"input_tokens":10,"output_tokens":20},"content":[{"type":"text","text":"ok"}]}}
+{"type":"assistant","uuid":"a2","timestamp":"2026-09-01T16:40:45.055Z","isSidechain":false,"message":{"usage":{"input_tokens":1,"output_tokens":2},"content":[{"type":"tool_use","name":"Read","input":{"file_path":"/tmp/x.rs"}}]}}
+{"type":"user","uuid":"u2","timestamp":"2026-09-01T16:40:45.276Z","isSidechain":false,"message":{"role":"user","content":[{"type":"tool_result","content":"file contents"}]}}
+{"type":"user","uuid":"u3","timestamp":"2026-09-01T16:40:50.000Z","isSidechain":true,"message":{"role":"user","content":"sidechain prompt"}}
+{"type":"user","uuid":"u4","timestamp":"2026-09-01T16:40:55.000Z","isSidechain":false,"isMeta":true,"message":{"role":"user","content":"Caveat: the messages below were generated while running local commands"}}
+{"type":"user","uuid":"u5","timestamp":"2026-09-01T16:41:05.654Z","isSidechain":false,"message":{"role":"user","content":"thanks, now add a test"}}
+{"type":"assistant","uuid":"a3","timestamp":"2026-09-01T16:41:20.000Z","isSidechain":false,"message":{"usage":{"input_tokens":5,"output_tokens":9},"content":[{"type":"text","text":"done"}]}}

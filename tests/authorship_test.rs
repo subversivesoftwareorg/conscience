@@ -33,7 +33,7 @@ fn make_session_at(
         ended_at: Some(end),
         model: Some("claude-opus-4-6".to_string()),
         work_categories: vec![WorkCategory::Code],
-        turns: TurnCounts { human: 10, assistant: 15, total: 25 },
+        turns: TurnCounts { human: 10, assistant: 15, machine: 0, total: 25 },
         tokens: TokenUsage { input: 100, output: 50_000, cache_creation: 0, cache_read: 0 },
         tools_used,
         files_touched: Vec::new(),

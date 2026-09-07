@@ -137,6 +137,8 @@ impl std::fmt::Display for AgentActionType {
 pub struct TurnCounts {
     pub human: u64,
     pub assistant: u64,
+    #[serde(default)]
+    pub machine: u64,
     pub total: u64,
 }
 
