@@ -71,6 +71,16 @@ conscience reflect
 conscience reflect --project /path/to/project --json
 ```
 
+Add `--interactive` (`-i`) to answer each question at a prompt and get a
+session summary. Answers are multi-line: a blank line finishes an answer,
+and pressing Enter right away skips the question. With `--json`, the
+answered session is emitted as JSON instead — handy for saving:
+
+```
+conscience reflect -i --project /path/to/project
+conscience reflect -i --json > retro-$(date +%F).json
+```
+
 ### GitHub Reports
 
 ```

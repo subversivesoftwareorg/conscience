@@ -82,6 +82,9 @@ enum Commands {
         /// Project directory to filter AI logs
         #[arg(long)]
         project: Option<PathBuf>,
+        /// Answer each question at a prompt, then see a session summary
+        #[arg(long, short)]
+        interactive: bool,
         /// Output as JSON instead of formatted text
         #[arg(long)]
         json: bool,
@@ -196,8 +199,9 @@ async fn main() {
             repo,
             days,
             project,
+            interactive,
             json,
-        } => run_reflect(repo.as_deref(), days, project.as_deref(), json).await,
+        } => run_reflect(repo.as_deref(), days, project.as_deref(), interactive, json).await,
     };
 
     if let Err(e) = result {
@@ -365,6 +369,7 @@ async fn run_reflect(
     repo: Option<&str>,
     days: u32,
     project: Option<&std::path::Path>,
+    interactive: bool,
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let cwd = std::env::current_dir()?;
@@ -401,7 +406,21 @@ async fn run_reflect(
         manifest.as_ref(),
     );
 
-    if json_output {
+    if interactive {
+        let stdin = std::io::stdin();
+        let stdout = std::io::stdout();
+        println!();
+        println!("  Reflection Session");
+        println!("  For team discussion \u{2014} not automated judgment.");
+        let responses = ethics::session::run_session(&reflections, stdin.lock(), stdout.lock());
+
+        if json_output {
+            println!("{}", serde_json::to_string_pretty(&responses)?);
+        } else {
+            println!();
+            print!("{}", ethics::session::render_summary(&responses));
+        }
+    } else if json_output {
         println!("{}", serde_json::to_string_pretty(&reflections)?);
     } else {
         println!();

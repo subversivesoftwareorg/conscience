@@ -4,6 +4,7 @@ pub mod multi;
 pub mod reflection;
 pub mod report;
 pub mod scorecard;
+pub mod session;
 pub mod signals;
 
 use crate::ai_tools::models::AiUsageSummary;
