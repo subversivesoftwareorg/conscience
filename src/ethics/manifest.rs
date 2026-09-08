@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 /// The conscience.yaml manifest — human-provided context that
@@ -128,6 +129,37 @@ impl MonthlyReview {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttentionThresholds {
+    #[serde(default = "default_idle_minutes")]
+    pub idle_minutes: f64,
+    #[serde(default = "default_engagement_floor_minutes")]
+    pub engagement_floor_minutes: f64,
+    #[serde(default = "default_flow_gap_minutes")]
+    pub flow_gap_minutes: f64,
+    #[serde(default = "default_flow_min_minutes")]
+    pub flow_min_minutes: f64,
+    #[serde(default)]
+    pub project_aliases: BTreeMap<String, String>,
+}
+
+impl Default for AttentionThresholds {
+    fn default() -> Self {
+        Self {
+            idle_minutes: default_idle_minutes(),
+            engagement_floor_minutes: default_engagement_floor_minutes(),
+            flow_gap_minutes: default_flow_gap_minutes(),
+            flow_min_minutes: default_flow_min_minutes(),
+            project_aliases: BTreeMap::new(),
+        }
+    }
+}
+
+fn default_idle_minutes() -> f64 { 15.0 }
+fn default_engagement_floor_minutes() -> f64 { 2.0 }
+fn default_flow_gap_minutes() -> f64 { 10.0 }
+fn default_flow_min_minutes() -> f64 { 20.0 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Thresholds {
     #[serde(default = "default_concentration_warn")]
     pub contribution_concentration_warn: f64,
@@ -145,6 +177,8 @@ pub struct Thresholds {
     pub max_session_hours: f64,
     #[serde(default)]
     pub solo_project: bool,
+    #[serde(default)]
+    pub attention: AttentionThresholds,
 }
 
 impl Default for Thresholds {
@@ -158,14 +192,15 @@ impl Default for Thresholds {
             tokens_per_turn_warn: default_tokens_per_turn_warn(),
             max_session_hours: default_max_session_hours(),
             solo_project: false,
+            attention: AttentionThresholds::default(),
         }
     }
 }
 
 fn default_concentration_warn() -> f64 { 0.80 }
 fn default_concentration_concern() -> f64 { 0.60 }
-fn default_ai_dependency_concern() -> f64 { 3.0 }
-fn default_ai_dependency_info() -> f64 { 2.0 }
+fn default_ai_dependency_concern() -> f64 { 12.0 }
+fn default_ai_dependency_info() -> f64 { 6.0 }
 fn default_tokens_per_file_warn() -> u64 { 100_000 }
 fn default_tokens_per_turn_warn() -> u64 { 20_000 }
 fn default_max_session_hours() -> f64 { 12.0 }

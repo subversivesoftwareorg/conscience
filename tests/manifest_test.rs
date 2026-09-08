@@ -75,7 +75,7 @@ fn test_defaults_applied() {
     let yaml = "{}";
     let manifest: Manifest = serde_yaml::from_str(yaml).unwrap();
     assert_eq!(manifest.thresholds.contribution_concentration_warn, 0.80);
-    assert_eq!(manifest.thresholds.ai_dependency_concern, 3.0);
+    assert_eq!(manifest.thresholds.ai_dependency_concern, 12.0);
     assert_eq!(manifest.thresholds.tokens_per_file_warn, 100_000);
     assert_eq!(manifest.thresholds.max_session_hours, 12.0);
     assert!(!manifest.thresholds.solo_project);
@@ -107,4 +107,37 @@ fn test_monthly_review_populated() {
         ..Default::default()
     };
     assert!(populated.is_populated());
+}
+
+#[test]
+fn attention_thresholds_default_and_parse() {
+    let manifest: Manifest = serde_yaml::from_str("{}").unwrap();
+    let a = &manifest.thresholds.attention;
+    assert_eq!(a.idle_minutes, 15.0);
+    assert_eq!(a.engagement_floor_minutes, 2.0);
+    assert_eq!(a.flow_gap_minutes, 10.0);
+    assert_eq!(a.flow_min_minutes, 20.0);
+    assert!(a.project_aliases.is_empty());
+
+    let yaml = r#"
+thresholds:
+  attention:
+    idle_minutes: 20
+    project_aliases:
+      "/tmp/worktrees/*": conscience
+"#;
+    let m: Manifest = serde_yaml::from_str(yaml).unwrap();
+    assert_eq!(m.thresholds.attention.idle_minutes, 20.0);
+    assert_eq!(m.thresholds.attention.flow_gap_minutes, 10.0, "unset keeps default");
+    assert_eq!(
+        m.thresholds.attention.project_aliases.get("/tmp/worktrees/*").map(String::as_str),
+        Some("conscience")
+    );
+}
+
+#[test]
+fn ai_dependency_defaults_recalibrated_for_corrected_counting() {
+    let manifest: Manifest = serde_yaml::from_str("{}").unwrap();
+    assert_eq!(manifest.thresholds.ai_dependency_info, 6.0);
+    assert_eq!(manifest.thresholds.ai_dependency_concern, 12.0);
 }
