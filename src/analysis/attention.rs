@@ -87,6 +87,13 @@ pub struct ActiveTime {
     pub per_day: Vec<DayAttention>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DwellStats {
+    pub median_minutes: f64,
+    pub mean_minutes: f64,
+    pub max_minutes: f64,
+}
+
 fn minutes_between(a: DateTime<Utc>, b: DateTime<Utc>) -> f64 {
     (b - a).num_seconds() as f64 / 60.0
 }
@@ -169,4 +176,50 @@ pub fn compute_active_time(
         per_project,
         per_day,
     }
+}
+
+pub fn compute_switches_dwell(tps: &[Touchpoint], th: &AttentionThresholds) -> (u64, DwellStats) {
+    let mut switches = 0u64;
+    let mut runs: Vec<f64> = Vec::new();
+    let mut run_start: Option<usize> = None;
+
+    for i in 0..tps.len() {
+        if run_start.is_none() {
+            run_start = Some(i);
+        }
+        let boundary = match tps.get(i + 1) {
+            None => true,
+            Some(next) => {
+                let gap = minutes_between(tps[i].at, next.at);
+                let idle = gap > th.idle_minutes;
+                let switched = next.project != tps[i].project && !idle;
+                if switched {
+                    switches += 1;
+                }
+                idle || switched
+            }
+        };
+        if boundary {
+            let start = run_start.take().unwrap();
+            runs.push(minutes_between(tps[start].at, tps[i].at));
+        }
+    }
+
+    let stats = if runs.is_empty() {
+        DwellStats {
+            median_minutes: 0.0,
+            mean_minutes: 0.0,
+            max_minutes: 0.0,
+        }
+    } else {
+        let mut sorted = runs.clone();
+        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        DwellStats {
+            median_minutes: sorted[sorted.len() / 2],
+            mean_minutes: runs.iter().sum::<f64>() / runs.len() as f64,
+            max_minutes: sorted[sorted.len() - 1],
+        }
+    };
+
+    (switches, stats)
 }

@@ -133,3 +133,15 @@ fn day_bucketing_uses_local_timezone() {
     let at_utc = compute_active_time(&tps, &th(), utc_tz());
     assert_eq!(at_utc.per_day[0].date.to_string(), "2026-09-02");
 }
+
+#[test]
+fn switches_ignore_idle_resumptions() {
+    // A@0 -> B@5 (switch), B@10 -> A@60 (gap 50 > idle: resumption, not switch)
+    let a = session("a", "/p/a", &[(0, None), (60, None)]);
+    let b = session("b", "/p/b", &[(5, None), (10, None)]);
+    let tps = collect_touchpoints(&[a, b], &th(), long_ago());
+    let (switches, dwell) = compute_switches_dwell(&tps, &th());
+    assert_eq!(switches, 1);
+    // dwell runs: [A@0] (0 min), [B@5,B@10] (5 min), [A@60] (0 min)
+    assert_eq!(dwell.max_minutes, 5.0);
+}
