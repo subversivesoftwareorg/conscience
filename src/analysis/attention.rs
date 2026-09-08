@@ -1,6 +1,6 @@
 use crate::ai_tools::models::AiSession;
 use crate::ethics::manifest::AttentionThresholds;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, FixedOffset, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 
@@ -61,4 +61,112 @@ pub fn collect_touchpoints(
 
     tps.sort_by_key(|t| t.at);
     tps
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProjectAttention {
+    pub project: String,
+    pub touchpoints: u64,
+    pub sessions: u64,
+    pub active_minutes_min: f64,
+    pub active_minutes_max: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DayAttention {
+    pub date: chrono::NaiveDate,
+    pub active_minutes: f64,
+    pub switches: u64,
+    pub projects: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActiveTime {
+    pub total_minutes: f64,
+    pub per_project: Vec<ProjectAttention>,
+    pub per_day: Vec<DayAttention>,
+}
+
+fn minutes_between(a: DateTime<Utc>, b: DateTime<Utc>) -> f64 {
+    (b - a).num_seconds() as f64 / 60.0
+}
+
+pub fn compute_active_time(
+    tps: &[Touchpoint],
+    th: &AttentionThresholds,
+    tz: FixedOffset,
+) -> ActiveTime {
+    let mut earlier: BTreeMap<String, f64> = BTreeMap::new();
+    let mut later: BTreeMap<String, f64> = BTreeMap::new();
+    let mut per_day: BTreeMap<chrono::NaiveDate, (f64, Vec<String>)> = BTreeMap::new();
+    let mut total = 0.0;
+
+    for (i, tp) in tps.iter().enumerate() {
+        let credit = match tps.get(i + 1) {
+            Some(next) => {
+                let gap = minutes_between(tp.at, next.at);
+                if gap <= th.idle_minutes {
+                    gap
+                } else {
+                    th.engagement_floor_minutes
+                }
+            }
+            None => th.engagement_floor_minutes,
+        };
+        total += credit;
+
+        *earlier.entry(tp.project.clone()).or_insert(0.0) += credit;
+        let later_owner = match tps.get(i + 1) {
+            Some(next) if minutes_between(tp.at, next.at) <= th.idle_minutes => {
+                next.project.clone()
+            }
+            _ => tp.project.clone(),
+        };
+        *later.entry(later_owner).or_insert(0.0) += credit;
+
+        let day = tp.at.with_timezone(&tz).date_naive();
+        let entry = per_day.entry(day).or_insert((0.0, Vec::new()));
+        entry.0 += credit;
+        if !entry.1.contains(&tp.project) {
+            entry.1.push(tp.project.clone());
+        }
+    }
+
+    let mut counts: BTreeMap<String, (u64, HashSet<String>)> = BTreeMap::new();
+    for tp in tps {
+        let e = counts.entry(tp.project.clone()).or_default();
+        e.0 += 1;
+        e.1.insert(tp.session_id.clone());
+    }
+
+    let per_project = counts
+        .into_iter()
+        .map(|(project, (n, sess))| {
+            let a = *earlier.get(&project).unwrap_or(&0.0);
+            let b = *later.get(&project).unwrap_or(&0.0);
+            ProjectAttention {
+                project,
+                touchpoints: n,
+                sessions: sess.len() as u64,
+                active_minutes_min: a.min(b),
+                active_minutes_max: a.max(b),
+            }
+        })
+        .collect();
+
+    let per_day = per_day
+        .into_iter()
+        .map(|(date, (active_minutes, projects))| DayAttention {
+            date,
+            active_minutes,
+            switches: 0,
+            projects,
+        })
+        .collect();
+
+    ActiveTime {
+        total_minutes: total,
+        per_project,
+        per_day,
+    }
 }

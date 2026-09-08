@@ -1,4 +1,4 @@
-use chrono::{DateTime, Duration, TimeZone, Utc};
+use chrono::{DateTime, Duration, FixedOffset, TimeZone, Utc};
 use conscience::ai_tools::models::*;
 use conscience::analysis::attention::*;
 use conscience::ethics::manifest::AttentionThresholds;
@@ -86,4 +86,50 @@ fn project_aliases_fold_worktrees() {
     let tps = collect_touchpoints(&[s1, s2], &t, long_ago());
     assert_eq!(tps[0].project, "conscience");
     assert_eq!(tps[1].project, "/home/dev/conscience");
+}
+
+fn utc_tz() -> FixedOffset {
+    FixedOffset::east_opt(0).unwrap()
+}
+
+#[test]
+fn active_time_caps_gaps_and_floors_idle() {
+    // A@0, A@10 (gap 10 ≤ 15: counts 10), A@40 (gap 30 > 15: floor 2), final: floor 2
+    let s = session("a", "/p/a", &[(0, None), (10, None), (40, None)]);
+    let tps = collect_touchpoints(&[s], &th(), long_ago());
+    let at = compute_active_time(&tps, &th(), utc_tz());
+    assert_eq!(at.total_minutes, 10.0 + 2.0 + 2.0);
+}
+
+#[test]
+fn per_project_active_time_is_a_range() {
+    // A@0 -> B@10: the 10-min gap is A's (earlier) or B's (later)
+    let a = session("a", "/p/a", &[(0, None)]);
+    let b = session("b", "/p/b", &[(10, None)]);
+    let tps = collect_touchpoints(&[a, b], &th(), long_ago());
+    let at = compute_active_time(&tps, &th(), utc_tz());
+
+    let pa = at.per_project.iter().find(|p| p.project == "/p/a").unwrap();
+    let pb = at.per_project.iter().find(|p| p.project == "/p/b").unwrap();
+    // earlier-attribution: A gets 10 + B floor 2; later-attribution: A floor... A has no
+    // incoming gap so A gets 0 + ... — assert the bounds we defined:
+    assert_eq!(pa.active_minutes_max, 10.0);
+    assert!(pa.active_minutes_min < pa.active_minutes_max);
+    assert_eq!(pb.active_minutes_max, 10.0 + 2.0);
+    assert_eq!(pb.active_minutes_min, 2.0);
+}
+
+#[test]
+fn day_bucketing_uses_local_timezone() {
+    // 2026-09-02 03:00 UTC == 2026-09-01 22:00 in UTC-5
+    let s = session("a", "/p/a", &[(15 * 60, None)]); // base 12:00 + 15h = 03:00 next day UTC
+    let tps = collect_touchpoints(&[s], &th(), long_ago());
+
+    let central = FixedOffset::west_opt(5 * 3600).unwrap();
+    let at = compute_active_time(&tps, &th(), central);
+    assert_eq!(at.per_day.len(), 1);
+    assert_eq!(at.per_day[0].date.to_string(), "2026-09-01");
+
+    let at_utc = compute_active_time(&tps, &th(), utc_tz());
+    assert_eq!(at_utc.per_day[0].date.to_string(), "2026-09-02");
 }
