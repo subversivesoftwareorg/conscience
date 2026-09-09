@@ -145,3 +145,35 @@ fn switches_ignore_idle_resumptions() {
     // dwell runs: [A@0] (0 min), [B@5,B@10] (5 min), [A@60] (0 min)
     assert_eq!(dwell.max_minutes, 5.0);
 }
+
+#[test]
+fn flow_episode_spans_projects() {
+    // Prompts every 5 min alternating projects for 30 min: one multi-project episode
+    let a = session("a", "/p/a", &[(0, None), (10, None), (20, None), (30, None)]);
+    let b = session("b", "/p/b", &[(5, None), (15, None), (25, None)]);
+    let tps = collect_touchpoints(&[a, b], &th(), long_ago());
+    let eps = compute_flow_episodes(&tps, &th());
+    assert_eq!(eps.len(), 1);
+    assert_eq!(eps[0].minutes, 30.0);
+    assert!(eps[0].multi_project);
+    assert_eq!(eps[0].touchpoints, 7);
+}
+
+#[test]
+fn waiting_on_ai_does_not_break_single_project_flow() {
+    // One project; agent runs 12 min between prompts (gap > flow_gap of 10),
+    // but the session's AI span covers the whole gap -> flow continues.
+    let s = session("a", "/p/a", &[(0, Some(12)), (12, Some(24)), (24, None)]);
+    let tps = collect_touchpoints(&[s], &th(), long_ago());
+    let eps = compute_flow_episodes(&tps, &th());
+    assert_eq!(eps.len(), 1, "waiting on AI is not a flow break");
+    assert_eq!(eps[0].minutes, 24.0);
+    assert!(!eps[0].multi_project);
+}
+
+#[test]
+fn short_bursts_are_not_flow() {
+    let s = session("a", "/p/a", &[(0, None), (5, None)]); // span 5 < flow_min 20
+    let tps = collect_touchpoints(&[s], &th(), long_ago());
+    assert!(compute_flow_episodes(&tps, &th()).is_empty());
+}

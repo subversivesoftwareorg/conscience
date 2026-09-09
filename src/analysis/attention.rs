@@ -178,6 +178,70 @@ pub fn compute_active_time(
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FlowEpisode {
+    pub start: DateTime<Utc>,
+    pub end: DateTime<Utc>,
+    pub minutes: f64,
+    pub touchpoints: u64,
+    pub projects: Vec<String>,
+    pub multi_project: bool,
+}
+
+pub fn compute_flow_episodes(tps: &[Touchpoint], th: &AttentionThresholds) -> Vec<FlowEpisode> {
+    if tps.is_empty() {
+        return Vec::new();
+    }
+
+    let mut episodes = Vec::new();
+    let mut start_idx = 0;
+
+    let gap_continues_episode = |i: usize| -> bool {
+        if i + 1 >= tps.len() {
+            return false;
+        }
+        let gap = minutes_between(tps[i].at, tps[i + 1].at);
+        if gap <= th.flow_gap_minutes {
+            return true;
+        }
+        // waiting-on-AI rule: gap > flow_gap but ≤ idle, and an AI span
+        // from the earlier touchpoint's session covers ≥ half
+        if gap <= th.idle_minutes {
+            if let Some(ai_end) = tps[i].ai_until {
+                let ai_coverage = minutes_between(tps[i].at, ai_end);
+                return ai_coverage >= gap / 2.0;
+            }
+        }
+        false
+    };
+
+    for i in 0..tps.len() {
+        let end_of_run = i + 1 >= tps.len() || !gap_continues_episode(i);
+        if end_of_run {
+            let span = minutes_between(tps[start_idx].at, tps[i].at);
+            if span >= th.flow_min_minutes {
+                let mut projects: Vec<String> = Vec::new();
+                for tp in &tps[start_idx..=i] {
+                    if !projects.contains(&tp.project) {
+                        projects.push(tp.project.clone());
+                    }
+                }
+                episodes.push(FlowEpisode {
+                    start: tps[start_idx].at,
+                    end: tps[i].at,
+                    minutes: span,
+                    touchpoints: (i - start_idx + 1) as u64,
+                    multi_project: projects.len() > 1,
+                    projects,
+                });
+            }
+            start_idx = i + 1;
+        }
+    }
+
+    episodes
+}
+
 pub fn compute_switches_dwell(tps: &[Touchpoint], th: &AttentionThresholds) -> (u64, DwellStats) {
     let mut switches = 0u64;
     let mut runs: Vec<f64> = Vec::new();
