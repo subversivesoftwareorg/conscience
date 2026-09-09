@@ -89,6 +89,21 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Analyze attention patterns across projects
+    Attention {
+        /// Number of days to look back
+        #[arg(long, default_value = "7")]
+        days: u32,
+        /// Filter to a specific project directory for AI logs
+        #[arg(long)]
+        project: Option<PathBuf>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+        /// Write an HTML timeline visualization to this path
+        #[arg(long)]
+        html: Option<PathBuf>,
+    },
     /// Ethical analysis: signals, scorecard, and reflection questions
     Examine {
         /// GitHub repository (owner/repo)
@@ -182,6 +197,9 @@ async fn main() {
             project,
             json,
         } => run_authorship(&repo, days, project.as_deref(), json).await,
+        Commands::Attention { days, project, json, html } => {
+            run_attention(days, project.as_deref(), json, html.as_deref()).await
+        }
         Commands::ExamineAll { days, json } => run_examine_all(days, json).await,
         Commands::Push {
             repo,
@@ -276,6 +294,38 @@ async fn run_authorship(
         println!("{}", serde_json::to_string_pretty(&result)?);
     } else {
         analysis::authorship::print_authorship_analysis(&result);
+    }
+
+    Ok(())
+}
+
+async fn run_attention(
+    days: u32,
+    project: Option<&std::path::Path>,
+    json_output: bool,
+    _html_path: Option<&std::path::Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let summary = ingest::ai::ingest_claude_code(project)?;
+    if summary.session_count == 0 {
+        eprintln!("No Claude Code sessions found.");
+        std::process::exit(1);
+    }
+
+    let cwd = std::env::current_dir()?;
+    let manifest_dir = project.unwrap_or(&cwd);
+    let manifest = ethics::manifest::Manifest::load(manifest_dir);
+    let th = manifest
+        .as_ref()
+        .map(|m| m.thresholds.attention.clone())
+        .unwrap_or_default();
+
+    let tz = *chrono::Local::now().offset();
+    let analysis = analysis::attention::analyze_attention(&summary.sessions, &th, days, tz);
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&analysis)?);
+    } else {
+        analysis::attention_report::print_attention_analysis(&analysis);
     }
 
     Ok(())

@@ -337,6 +337,84 @@ pub fn compute_orchestration(
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AttentionAnalysis {
+    pub window_days: u32,
+    pub total_touchpoints: u64,
+    pub active_time: ActiveTime,
+    pub switches_per_day: f64,
+    pub dwell: DwellStats,
+    pub flow_episodes: Vec<FlowEpisode>,
+    pub orchestration: OrchestrationStats,
+    pub thresholds_used: AttentionThresholds,
+    pub reflection_question: String,
+}
+
+pub fn analyze_attention(
+    sessions: &[AiSession],
+    th: &AttentionThresholds,
+    days: u32,
+    tz: FixedOffset,
+) -> AttentionAnalysis {
+    let since = Utc::now() - chrono::Duration::days(days as i64);
+    let tps = collect_touchpoints(sessions, th, since);
+    let active_time = compute_active_time(&tps, th, tz);
+    let (switches, dwell) = compute_switches_dwell(&tps, th);
+    let flow_episodes = compute_flow_episodes(&tps, th);
+    let orchestration = compute_orchestration(&tps, th);
+
+    let num_days = active_time.per_day.len().max(1) as f64;
+    let switches_per_day = switches as f64 / num_days;
+
+    let reflection_question = generate_attention_reflection(&flow_episodes, &active_time, switches_per_day);
+
+    AttentionAnalysis {
+        window_days: days,
+        total_touchpoints: tps.len() as u64,
+        active_time,
+        switches_per_day,
+        dwell,
+        flow_episodes,
+        orchestration,
+        thresholds_used: th.clone(),
+        reflection_question,
+    }
+}
+
+fn generate_attention_reflection(
+    episodes: &[FlowEpisode],
+    active: &ActiveTime,
+    switches_per_day: f64,
+) -> String {
+    let multi = episodes.iter().filter(|e| e.multi_project).count();
+    let single = episodes.iter().filter(|e| !e.multi_project).count();
+    let n_projects = active.per_project.len();
+
+    if multi > single && n_projects > 1 {
+        format!(
+            "Most of your flow this period spanned multiple projects ({} multi vs {} single-project episodes across {} projects). \
+            Does that feel like richness \u{2014} different perspectives feeding each other \u{2014} or fragmentation? \
+            What would your ideal week's attention pattern look like?",
+            multi, single, n_projects
+        )
+    } else if switches_per_day > 8.0 {
+        format!(
+            "You switched projects {:.1} times per day. Is that responsive orchestration, \
+            or are you being pulled? Would fewer switches let you go deeper?",
+            switches_per_day
+        )
+    } else if episodes.is_empty() {
+        "No flow episodes were detected. Were there stretches that felt like flow but happened \
+        outside of AI-assisted work? Is AI usage interrupting flow rather than supporting it?".to_string()
+    } else {
+        format!(
+            "You had {} flow episode(s) this period. Are those the moments that mattered most, \
+            or was important work happening in the shorter bursts too?",
+            episodes.len()
+        )
+    }
+}
+
 pub fn compute_switches_dwell(tps: &[Touchpoint], th: &AttentionThresholds) -> (u64, DwellStats) {
     let mut switches = 0u64;
     let mut runs: Vec<f64> = Vec::new();
