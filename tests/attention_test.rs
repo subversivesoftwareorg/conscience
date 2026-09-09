@@ -1,6 +1,7 @@
 use chrono::{DateTime, Duration, FixedOffset, TimeZone, Utc};
 use conscience::ai_tools::models::*;
 use conscience::analysis::attention::*;
+use conscience::analysis::attention_html;
 use conscience::ethics::manifest::AttentionThresholds;
 use std::collections::BTreeMap;
 
@@ -214,4 +215,26 @@ fn orchestration_attended_with_active_user() {
     let orch = compute_orchestration(&tps, &th());
     assert!(orch.attended_overlap_minutes > 0.0);
     assert!(orch.attended_overlap_minutes <= orch.raw_overlap_minutes);
+}
+
+#[test]
+fn html_timeline_contains_svg_and_project_lanes() {
+    let a = session("a", "/p/alpha", &[(0, Some(5)), (10, Some(15)), (20, None)]);
+    let b = session("b", "/p/beta", &[(5, Some(10)), (15, Some(20))]);
+    let tps = collect_touchpoints(&[a, b], &th(), long_ago());
+    let tz = FixedOffset::east_opt(0).unwrap();
+    let analysis = conscience::analysis::attention::analyze_attention(
+        &[
+            session("a", "/p/alpha", &[(0, Some(5)), (10, Some(15)), (20, None)]),
+            session("b", "/p/beta", &[(5, Some(10)), (15, Some(20))]),
+        ],
+        &th(),
+        3650,
+        tz,
+    );
+    let html = attention_html::render_html_timeline(&analysis, &tps, tz);
+    assert!(html.contains("<svg"), "must contain SVG");
+    assert!(html.contains("alpha"), "project name in lane label");
+    assert!(html.contains("beta"), "project name in lane label");
+    assert!(html.contains("Attention Timeline"), "title present");
 }

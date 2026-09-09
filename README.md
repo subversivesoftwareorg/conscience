@@ -81,6 +81,21 @@ conscience reflect -i --project /path/to/project
 conscience reflect -i --json > retro-$(date +%F).json
 ```
 
+### Attention & Flow
+
+Analyze how your time and attention move across projects:
+
+```
+# Weekly attention summary (default 7 days)
+conscience attention
+
+# With an HTML timeline visualization
+conscience attention --days 14 --html attention.html
+
+# JSON for scripting
+conscience attention --json
+```
+
 ### GitHub Reports
 
 ```

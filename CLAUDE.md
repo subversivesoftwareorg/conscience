@@ -171,6 +171,9 @@ conscience examine-all [--days 30] [--json]
 
 # Push results to a dashboard server
 conscience push --repo <owner/repo> --project <path> [--endpoint <url>]
+
+# Attention & flow analysis across projects
+conscience attention [--days 7] [--project <path>] [--json] [--html <output.html>]
 ```
 
 ### Planned Commands

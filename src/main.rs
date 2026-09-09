@@ -303,7 +303,7 @@ async fn run_attention(
     days: u32,
     project: Option<&std::path::Path>,
     json_output: bool,
-    _html_path: Option<&std::path::Path>,
+    html_path: Option<&std::path::Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let summary = ingest::ai::ingest_claude_code(project)?;
     if summary.session_count == 0 {
@@ -326,6 +326,14 @@ async fn run_attention(
         println!("{}", serde_json::to_string_pretty(&analysis)?);
     } else {
         analysis::attention_report::print_attention_analysis(&analysis);
+    }
+
+    if let Some(path) = html_path {
+        let since = chrono::Utc::now() - chrono::Duration::days(days as i64);
+        let tps = analysis::attention::collect_touchpoints(&summary.sessions, &th, since);
+        let html = analysis::attention_html::render_html_timeline(&analysis, &tps, tz);
+        std::fs::write(path, &html)?;
+        eprintln!("Timeline written to {}", path.display());
     }
 
     Ok(())
