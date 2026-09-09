@@ -242,6 +242,101 @@ pub fn compute_flow_episodes(tps: &[Touchpoint], th: &AttentionThresholds) -> Ve
     episodes
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrchestrationStats {
+    pub raw_overlap_minutes: f64,
+    pub attended_overlap_minutes: f64,
+    pub max_concurrent: u64,
+    pub total_ai_minutes: f64,
+}
+
+pub fn compute_orchestration(
+    tps: &[Touchpoint],
+    th: &AttentionThresholds,
+) -> OrchestrationStats {
+    if tps.is_empty() {
+        return OrchestrationStats {
+            raw_overlap_minutes: 0.0,
+            attended_overlap_minutes: 0.0,
+            max_concurrent: 0,
+            total_ai_minutes: 0.0,
+        };
+    }
+
+    let epoch = tps[0].at;
+    let mut ai_spans: Vec<(f64, f64, String)> = Vec::new();
+    for tp in tps {
+        if let Some(end) = tp.ai_until {
+            let start_m = minutes_between(epoch, tp.at);
+            let end_m = minutes_between(epoch, end);
+            if end_m > start_m {
+                ai_spans.push((start_m, end_m, tp.session_id.clone()));
+            }
+        }
+    }
+
+    if ai_spans.is_empty() {
+        return OrchestrationStats {
+            raw_overlap_minutes: 0.0,
+            attended_overlap_minutes: 0.0,
+            max_concurrent: 0,
+            total_ai_minutes: 0.0,
+        };
+    }
+
+    let max_end = ai_spans
+        .iter()
+        .map(|(_, e, _)| *e)
+        .fold(0.0f64, f64::max);
+    let num_buckets = max_end.ceil() as usize + 1;
+
+    let mut total_ai = 0.0f64;
+    let mut bucket_sessions: Vec<HashSet<String>> = vec![HashSet::new(); num_buckets];
+    for (s, e, sid) in &ai_spans {
+        total_ai += e - s;
+        let si = (*s).floor() as usize;
+        let ei = (*e).ceil() as usize;
+        for bucket in si..ei.min(num_buckets) {
+            bucket_sessions[bucket].insert(sid.clone());
+        }
+    }
+
+    let max_concurrent = bucket_sessions
+        .iter()
+        .map(|s| s.len() as u64)
+        .max()
+        .unwrap_or(0);
+    let raw_overlap: f64 = bucket_sessions
+        .iter()
+        .filter(|s| s.len() >= 2)
+        .count() as f64;
+
+    let mut attended = vec![false; num_buckets];
+    for i in 0..tps.len().saturating_sub(1) {
+        let gap = minutes_between(tps[i].at, tps[i + 1].at);
+        if gap <= th.idle_minutes {
+            let si = minutes_between(epoch, tps[i].at).floor() as usize;
+            let ei = minutes_between(epoch, tps[i + 1].at).ceil() as usize;
+            for bucket in si..ei.min(num_buckets) {
+                attended[bucket] = true;
+            }
+        }
+    }
+
+    let attended_overlap: f64 = bucket_sessions
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| s.len() >= 2 && *attended.get(*i).unwrap_or(&false))
+        .count() as f64;
+
+    OrchestrationStats {
+        raw_overlap_minutes: raw_overlap,
+        attended_overlap_minutes: attended_overlap,
+        max_concurrent,
+        total_ai_minutes: total_ai,
+    }
+}
+
 pub fn compute_switches_dwell(tps: &[Touchpoint], th: &AttentionThresholds) -> (u64, DwellStats) {
     let mut switches = 0u64;
     let mut runs: Vec<f64> = Vec::new();

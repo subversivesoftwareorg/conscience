@@ -177,3 +177,41 @@ fn short_bursts_are_not_flow() {
     let tps = collect_touchpoints(&[s], &th(), long_ago());
     assert!(compute_flow_episodes(&tps, &th()).is_empty());
 }
+
+#[test]
+fn orchestration_detects_concurrent_ai_work() {
+    // Two sessions with overlapping AI spans: both working minutes 0–10
+    let a = session("a", "/p/a", &[(0, Some(10))]);
+    let b = session("b", "/p/b", &[(0, Some(10))]);
+    let tps = collect_touchpoints(&[a, b], &th(), long_ago());
+    let orch = compute_orchestration(&tps, &th());
+    assert_eq!(orch.raw_overlap_minutes, 10.0);
+    assert_eq!(orch.max_concurrent, 2);
+}
+
+#[test]
+fn orchestration_attended_excludes_walked_away() {
+    // User prompts A@0 (AI works 0–20), prompts B@0 (AI works 0–20), then nothing.
+    // Raw overlap is 20 min. But the user's only touchpoints are at minute 0,
+    // so next-gap is 0 (no next touchpoint) → idle. attended_overlap should be 0
+    // (the engagement floor doesn't count as attention span for orchestration).
+    let a = session("a", "/p/a", &[(0, Some(20))]);
+    let b = session("b", "/p/b", &[(0, Some(20))]);
+    let tps = collect_touchpoints(&[a, b], &th(), long_ago());
+    let orch = compute_orchestration(&tps, &th());
+    assert_eq!(orch.raw_overlap_minutes, 20.0);
+    assert_eq!(orch.attended_overlap_minutes, 0.0);
+}
+
+#[test]
+fn orchestration_attended_with_active_user() {
+    // A@0 (AI 0–10), B@0 (AI 0–10), user prompts A@5 and B@8.
+    // User is active: gap 0→5 (5 ≤ 15), 5→8 (3 ≤ 15). Attended window = 0–8.
+    // Overlap of two AI spans = 0–10. Intersection with 0–8 = 8 min.
+    let a = session("a", "/p/a", &[(0, Some(10)), (5, Some(10))]);
+    let b = session("b", "/p/b", &[(0, Some(10)), (8, None)]);
+    let tps = collect_touchpoints(&[a, b], &th(), long_ago());
+    let orch = compute_orchestration(&tps, &th());
+    assert!(orch.attended_overlap_minutes > 0.0);
+    assert!(orch.attended_overlap_minutes <= orch.raw_overlap_minutes);
+}
