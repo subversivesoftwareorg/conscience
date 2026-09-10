@@ -401,22 +401,34 @@ fn detect_token_consumption(summary: &AiUsageSummary, signals: &mut Vec<Signal>)
     let output = summary.total_tokens.output;
 
     if output > 1_000_000 {
+        let energy_config = crate::ethics::manifest::EnergyConfig::default();
+        let est = crate::analysis::energy::estimate_total_energy(&summary.sessions, &energy_config);
+
         signals.push(Signal {
             principle: Principle::EnvironmentalCost,
             severity: Severity::Info,
             title: "Significant token consumption".to_string(),
             detail: format!(
                 "{:.1}M output tokens across {} sessions. \
+                Estimated energy: ~{:.0} Wh (\u{00b1}{:.0}%). \
                 Consider whether the AI usage is proportionate to the value delivered.",
                 output as f64 / 1_000_000.0,
-                summary.session_count
+                summary.session_count,
+                est.total_wh,
+                if est.total_wh > 0.0 {
+                    (est.uncertainty_range.1 - est.total_wh) / est.total_wh * 100.0
+                } else {
+                    0.0
+                }
             ),
             evidence: format!(
-                "Total: {:.1}M tokens ({:.1}M output, {:.1}M cache)",
+                "Total: {:.1}M tokens ({:.1}M output, {:.1}M cache), \
+                roughly {:.1} hours of laptop use",
                 total as f64 / 1_000_000.0,
                 output as f64 / 1_000_000.0,
                 (summary.total_tokens.cache_creation + summary.total_tokens.cache_read) as f64
-                    / 1_000_000.0
+                    / 1_000_000.0,
+                est.total_wh / 60.0
             ),
         });
     }

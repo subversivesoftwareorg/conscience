@@ -407,3 +407,16 @@ fn test_suspicious_bash_truncation_survives_multibyte_chars() {
         || s.detail.to_lowercase().contains("network")
         || s.evidence.contains("curl")));
 }
+
+#[test]
+fn test_token_consumption_signal_includes_energy_estimate() {
+    let session = make_ai_session("s1", 2_000_000, 10, 15, 5, 3, vec![], vec![], 1.0);
+    let summary = make_ai_summary(vec![session]);
+    let signals = signals::detect_ai_signals(&summary, None);
+
+    let token_signal = signals.iter().find(|s| s.title.contains("token consumption"));
+    assert!(token_signal.is_some(), "should have token consumption signal");
+    let sig = token_signal.unwrap();
+    assert!(sig.detail.contains("Wh"), "detail should mention Wh, got: {}", sig.detail);
+    assert!(sig.evidence.contains("laptop"), "evidence should have laptop comparison, got: {}", sig.evidence);
+}

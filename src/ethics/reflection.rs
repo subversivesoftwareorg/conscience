@@ -168,10 +168,16 @@ fn build_proportionality_reflection(
 
     if let Some(ai_data) = ai {
         let output_tokens = ai_data.total_tokens.output;
+        let energy_config = crate::ethics::manifest::EnergyConfig::default();
+        let est = crate::analysis::energy::estimate_total_energy(
+            &ai_data.sessions,
+            &energy_config,
+        );
         context_parts.push(format!(
-            "{:.1}K output tokens consumed across {} sessions",
+            "{:.1}K output tokens consumed across {} sessions (estimated ~{:.0} Wh energy)",
             output_tokens as f64 / 1_000.0,
-            ai_data.session_count
+            ai_data.session_count,
+            est.total_wh
         ));
     }
 
