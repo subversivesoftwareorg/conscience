@@ -146,6 +146,8 @@ Conscience tries three methods in order:
 
 Adding a new AI tool parser means implementing the `AiToolParser` trait — roughly 100-200 lines of Rust.
 
+**Upgrading: AI:Human ratio threshold change.** As of the attention-analysis release, tool-result messages are no longer counted as human turns when computing AI:Human ratios. This means ratios are substantially higher than before for the same sessions. The default `ai_dependency_info` and `ai_dependency_concern` thresholds were recalibrated to 6.0 and 12.0 respectively. If you have set custom ratio thresholds in your `conscience.yaml`, you should re-tune them against the new counting method.
+
 ### Cross-Project Analysis
 
 Scan all your Claude Code projects at once, identify outliers:

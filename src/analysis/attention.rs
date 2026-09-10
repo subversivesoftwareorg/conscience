@@ -105,7 +105,7 @@ pub fn compute_active_time(
 ) -> ActiveTime {
     let mut earlier: BTreeMap<String, f64> = BTreeMap::new();
     let mut later: BTreeMap<String, f64> = BTreeMap::new();
-    let mut per_day: BTreeMap<chrono::NaiveDate, (f64, Vec<String>)> = BTreeMap::new();
+    let mut per_day: BTreeMap<chrono::NaiveDate, (f64, u64, Vec<String>)> = BTreeMap::new();
     let mut total = 0.0;
 
     for (i, tp) in tps.iter().enumerate() {
@@ -132,10 +132,17 @@ pub fn compute_active_time(
         *later.entry(later_owner).or_insert(0.0) += credit;
 
         let day = tp.at.with_timezone(&tz).date_naive();
-        let entry = per_day.entry(day).or_insert((0.0, Vec::new()));
+        let entry = per_day.entry(day).or_insert((0.0, 0, Vec::new()));
         entry.0 += credit;
-        if !entry.1.contains(&tp.project) {
-            entry.1.push(tp.project.clone());
+        if !entry.2.contains(&tp.project) {
+            entry.2.push(tp.project.clone());
+        }
+
+        if let Some(next) = tps.get(i + 1) {
+            let gap = minutes_between(tp.at, next.at);
+            if gap <= th.idle_minutes && next.project != tp.project {
+                entry.1 += 1;
+            }
         }
     }
 
@@ -163,10 +170,10 @@ pub fn compute_active_time(
 
     let per_day = per_day
         .into_iter()
-        .map(|(date, (active_minutes, projects))| DayAttention {
+        .map(|(date, (active_minutes, switches, projects))| DayAttention {
             date,
             active_minutes,
-            switches: 0,
+            switches,
             projects,
         })
         .collect();

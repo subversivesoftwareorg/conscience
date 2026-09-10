@@ -94,6 +94,17 @@ fn utc_tz() -> FixedOffset {
 }
 
 #[test]
+fn per_day_switches_populated() {
+    // A@0 -> B@10: different project, gap 10 ≤ idle 15 -> 1 switch on the single day.
+    let a = session("a", "/p/a", &[(0, None)]);
+    let b = session("b", "/p/b", &[(10, None)]);
+    let tps = collect_touchpoints(&[a, b], &th(), long_ago());
+    let at = compute_active_time(&tps, &th(), utc_tz());
+    assert_eq!(at.per_day.len(), 1);
+    assert_eq!(at.per_day[0].switches, 1, "A->B is one context switch");
+}
+
+#[test]
 fn active_time_caps_gaps_and_floors_idle() {
     // A@0, A@10 (gap 10 ≤ 15: counts 10), A@40 (gap 30 > 15: floor 2), final: floor 2
     let s = session("a", "/p/a", &[(0, None), (10, None), (40, None)]);

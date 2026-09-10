@@ -11,7 +11,7 @@ pub fn print_attention_analysis(analysis: &AttentionAnalysis) {
     println!();
     print_daily_summary(&analysis.active_time.per_day, analysis.switches_per_day, &analysis.dwell);
     println!();
-    print_flow_episodes(&analysis.flow_episodes);
+    print_flow_episodes(&analysis.flow_episodes, analysis.thresholds_used.flow_min_minutes);
     println!();
     print_orchestration(&analysis.orchestration);
     println!();
@@ -61,9 +61,9 @@ fn print_daily_summary(days: &[DayAttention], switches_per_day: f64, dwell: &Dwe
     );
 }
 
-fn print_flow_episodes(episodes: &[FlowEpisode]) {
+fn print_flow_episodes(episodes: &[FlowEpisode], flow_min_minutes: f64) {
     if episodes.is_empty() {
-        println!("  No flow episodes detected (minimum {} min sustained engagement).", 20);
+        println!("  No flow episodes detected (minimum {:.0} min sustained engagement).", flow_min_minutes);
         return;
     }
     println!("  Flow Episodes");
