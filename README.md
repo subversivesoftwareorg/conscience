@@ -33,6 +33,49 @@ Prebuilt binaries for Linux and macOS are available on the [Releases page](https
 
 ## Quick Start
 
+One command per thing you're most likely to want. Each is covered in depth in [Usage](#usage) below.
+
+```bash
+# Full ethical analysis: signals, scorecard, and reflection questions
+# for a repo and the Claude Code sessions that built it
+conscience examine --repo your-org/your-repo --project ~/code/your-repo --days 30
+
+# Run a team retrospective: answer data-enriched reflection questions
+# at a prompt and get a session summary
+conscience reflect --repo your-org/your-repo --project ~/code/your-repo --interactive
+
+# See how your attention moved across projects this week —
+# active time, context switches, flow episodes — with an HTML timeline
+conscience attention --days 7 --html attention.html
+
+# Estimate who is writing code vs. operating AI tools, by correlating
+# commit timestamps with AI session activity
+conscience authorship --repo your-org/your-repo --project ~/code/your-repo --days 30
+
+# Scan every Claude Code project on this machine and flag outliers
+# (token consumption, AI dependency, security signals)
+conscience examine-all --days 30
+
+# Summarize GitHub activity: commits, PRs, review patterns, contributors
+conscience report github --repo your-org/your-repo --days 30
+
+# Summarize AI tool usage: sessions, tokens, tools called, files touched
+conscience report ai --project ~/code/your-repo
+
+# Emit raw JSON for scripting (same data the reports format)
+conscience ingest github --repo your-org/your-repo --days 30 > github.json
+conscience ingest claude-code --project ~/code/your-repo > sessions.json
+
+# Push an analysis snapshot to your team's dashboard for trend tracking
+conscience push --repo your-org/your-repo --project ~/code/your-repo --endpoint https://dashboard.example.com
+```
+
+`--repo` needs GitHub access ([three auth options](#github-authentication));
+`--project` commands read local Claude Code logs and need no setup. A
+[`conscience.yaml`](#configuration-conscienceyaml) enriches any of them.
+
+## Usage
+
 ### Ethical Analysis
 
 The core command. Combines GitHub data and AI tool logs into a single analysis:
