@@ -24,9 +24,6 @@ jobs:
           - target: aarch64-apple-darwin
             os: macos-latest
             artifact: conscience-macos-arm64
-          - target: x86_64-apple-darwin
-            os: macos-13
-            artifact: conscience-macos-amd64
 
     runs-on: ${{ matrix.os }}
 
