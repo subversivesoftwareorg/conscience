@@ -179,6 +179,8 @@ pub struct Thresholds {
     pub solo_project: bool,
     #[serde(default)]
     pub attention: AttentionThresholds,
+    #[serde(default)]
+    pub energy: EnergyConfig,
 }
 
 impl Default for Thresholds {
@@ -193,8 +195,32 @@ impl Default for Thresholds {
             max_session_hours: default_max_session_hours(),
             solo_project: false,
             attention: AttentionThresholds::default(),
+            energy: EnergyConfig::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnergyConfig {
+    #[serde(default)]
+    pub overrides: BTreeMap<String, EnergyOverride>,
+    #[serde(default)]
+    pub grid_carbon_intensity: Option<f64>,
+}
+
+impl Default for EnergyConfig {
+    fn default() -> Self {
+        Self {
+            overrides: BTreeMap::new(),
+            grid_carbon_intensity: Some(0.42),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnergyOverride {
+    pub wh_per_1k_input: Option<f64>,
+    pub wh_per_1k_output: Option<f64>,
 }
 
 fn default_concentration_warn() -> f64 { 0.80 }
