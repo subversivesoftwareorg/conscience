@@ -470,10 +470,10 @@ fn detect_tool_patterns(summary: &AiUsageSummary, signals: &mut Vec<Signal>) {
 }
 
 fn truncate(s: &str, max_len: usize) -> String {
-    if s.len() <= max_len {
+    if s.chars().count() <= max_len {
         s.to_string()
     } else {
-        format!("{}...", &s[..max_len])
+        format!("{}...", s.chars().take(max_len).collect::<String>())
     }
 }
 
@@ -515,7 +515,7 @@ fn detect_tokenmaxxing(
                 detail: format!(
                     "Session {} used {}K output tokens but only touched {} file(s). \
                     Lots of tokens with little tangible output may indicate waste or misuse.",
-                    &session.session_id[..session.session_id.len().min(8)],
+                    session.session_id.chars().take(8).collect::<String>(),
                     session.tokens.output / 1_000,
                     session.files_touched.len()
                 ),
@@ -538,7 +538,7 @@ fn detect_tokenmaxxing(
                     detail: format!(
                         "Session {} averaged {}K output tokens per turn. \
                         AI may be generating excessive content.",
-                        &session.session_id[..session.session_id.len().min(8)],
+                        session.session_id.chars().take(8).collect::<String>(),
                         tokens_per_turn / 1_000,
                     ),
                     evidence: format!(
@@ -560,7 +560,7 @@ fn detect_tokenmaxxing(
                     detail: format!(
                         "Session {} ran for {:.1} hours. \
                         This may indicate unattended AI automation.",
-                        &session.session_id[..session.session_id.len().min(8)],
+                        session.session_id.chars().take(8).collect::<String>(),
                         duration_hours
                     ),
                     evidence: format!(

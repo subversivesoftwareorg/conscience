@@ -220,3 +220,36 @@ fn test_multiple_contributors() {
     let bob = result.contributors.iter().find(|c| c.author == "bob").unwrap();
     assert_eq!(bob.ai_correlation_pct, 0.0);
 }
+
+#[test]
+fn test_print_survives_multibyte_commit_message() {
+    // Commit messages with multi-byte UTF-8 must not panic the display
+    // truncation (same bug class as the signals '═' crash).
+    let now = Utc::now();
+    let session_start = now - Duration::hours(2);
+    let session_end = now - Duration::hours(1);
+    let commit_time = now - Duration::minutes(90);
+
+    let mut commit = make_commit_at("alice", commit_time);
+    let mut msg = String::from("feat: add banner ");
+    while msg.len() < 46 {
+        msg.push('x');
+    }
+    msg.push_str("═══════");
+    assert!(!msg.is_char_boundary(47), "test setup: byte 47 must be mid-char");
+    commit.message = msg;
+
+    let repo = RepoSummary {
+        owner: "test".to_string(),
+        repo: "repo".to_string(),
+        period_start: now - Duration::days(7),
+        period_end: now,
+        commits: vec![commit],
+        pull_requests: Vec::new(),
+    };
+    let ai = make_summary(vec![make_session_at("session1", session_start, session_end, 5)]);
+
+    let result = authorship::analyze_authorship(&repo, &ai);
+    assert_eq!(result.total_ai_correlated, 1);
+    authorship::print_authorship_analysis(&result);
+}

@@ -262,8 +262,8 @@ pub fn print_authorship_analysis(analysis: &AuthorshipAnalysis) {
                 ]);
 
             for cc in c.correlated_commits.iter().take(10) {
-                let msg = if cc.message.len() > 50 {
-                    format!("{}...", &cc.message[..47])
+                let msg = if cc.message.chars().count() > 50 {
+                    format!("{}...", cc.message.chars().take(47).collect::<String>())
                 } else {
                     cc.message.clone()
                 };
