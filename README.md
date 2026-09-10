@@ -9,7 +9,7 @@ Conscience asks the question posed by Pope Leo XIV in *Magnifica Humanitas*: **"
 Conscience pulls data from GitHub and AI tool logs, then runs a three-layer ethical analysis:
 
 1. **Signals** — Automated pattern detection: contribution concentration, review gaps, AI dependency ratios, token consumption. Flags concerns *and* healthy patterns.
-2. **Scorecard** — Maps signals to six ethical principles drawn from [Magnifica Humanitas](https://www.vatican.va/content/leo-xiv/en/encyclicals/documents/20260515-magnifica-humanitas.html) and the [Leiden Declaration on AI and Mathematics](https://leidendeclaration.ai). Marks which dimensions need human assessment.
+2. **Scorecard** — Maps signals to seven ethical principles drawn from [Magnifica Humanitas](https://www.vatican.va/content/leo-xiv/en/encyclicals/documents/20260515-magnifica-humanitas.html) and the [Leiden Declaration on AI and Mathematics](https://leidendeclaration.ai). Marks which dimensions need human assessment.
 3. **Reflection Questions** — Data-informed questions for team retrospectives. Populated with real numbers but answered by humans, not algorithms.
 
 This is a discernment tool, not a surveillance tool. It is designed for teams to evaluate themselves.
@@ -96,6 +96,11 @@ conscience attention --days 14 --html attention.html
 conscience attention --json
 ```
 
+Active-time estimates are floors (only Claude Code activity is visible), and
+per-project figures are ranges reflecting attribution uncertainty. What counts
+as "idle" and "flow" is configurable — see the `attention` block under
+[Configuration](#configuration-conscienceyaml) below.
+
 ### GitHub Reports
 
 ```
@@ -134,6 +139,46 @@ Conscience tries three methods in order:
    token = "ghp_your_token_here"
    ```
 
+## Configuration: conscience.yaml
+
+Most commands work with zero configuration. To enrich the analysis with human
+context — and to tune thresholds to your team's style (subsidiarity: you define
+your own evaluation criteria) — put a `conscience.yaml` in your project root.
+This repo's own [`conscience.yaml`](conscience.yaml) is a working example.
+
+```yaml
+project:
+  name: "My Project"
+  mission: "What this project is for"
+  beneficiaries:
+    - name: "Who benefits"
+      description: "How"
+
+team:
+  size: 3
+  learning_goals:
+    - "What the team is trying to learn"
+
+thresholds:
+  # AI:Human ratio thresholds (see upgrade note below)
+  ai_dependency_info: 6.0
+  ai_dependency_concern: 12.0
+  solo_project: false
+
+  # Attention analysis (conscience attention)
+  attention:
+    idle_minutes: 15            # gaps longer than this are idle, not active time
+    engagement_floor_minutes: 2 # credit for an isolated prompt
+    flow_gap_minutes: 10        # max gap inside a flow episode
+    flow_min_minutes: 20        # minimum span to count as flow
+    project_aliases:            # fold worktrees/scratch dirs into one project
+      "/private/tmp/worktrees/*": my-project
+```
+
+All fields are optional; defaults apply when absent. `examine`, `reflect`,
+`push`, and `attention` load the manifest from the current directory or
+`--project`.
+
 ## AI Tool Support
 
 | Tool | Status | Data Source |
@@ -143,6 +188,8 @@ Conscience tries three methods in order:
 | Cursor | Planned | — |
 | OpenAI Codex | Planned | — |
 | Windsurf | Planned | — |
+| OpenClaw | Planned | — |
+| NanoClaw | Planned | — |
 
 Adding a new AI tool parser means implementing the `AiToolParser` trait — roughly 100-200 lines of Rust.
 
@@ -252,6 +299,7 @@ Conscience detects abuse patterns automatically:
   │ Developer Growth   │ 0       │ Needs human input │
   │ Environmental Cost │ 1       │ HEALTHY           │
   │ Code Provenance    │ 0       │ Needs human input │
+  │ Security           │ 0       │ HEALTHY           │
   ╰────────────────────┴─────────┴───────────────────╯
 
   Reflection Questions

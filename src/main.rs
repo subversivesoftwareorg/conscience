@@ -153,7 +153,7 @@ enum ReportSource {
     },
     /// Report on AI tool usage
     Ai {
-        /// Filter to a specific AI tool
+        /// Filter to a specific AI tool (claude-code, copilot, cursor, codex, windsurf, openclaw, nanoclaw)
         #[arg(long, value_parser = parse_ai_tool)]
         tool: Option<String>,
         /// Filter to a specific project directory

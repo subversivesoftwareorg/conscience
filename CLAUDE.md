@@ -155,9 +155,12 @@ When evaluating a feature, PR, or sprint, Conscience should help teams ask:
 conscience ingest github --repo <owner/repo> --days 30
 conscience report github --repo <owner/repo> --days 30
 
-# AI Tool Usage (Claude Code implemented; Copilot, Cursor, Codex, Windsurf planned)
+# AI Tool Usage (Claude Code implemented; Copilot, Cursor, Codex, Windsurf, OpenClaw, NanoClaw planned)
 conscience ingest claude-code [--project <path>]
 conscience report ai [--tool claude-code] [--project <path>]
+
+# Authorship analysis: who is writing code vs. operating AI tools
+conscience authorship --repo <owner/repo> [--project <path>] [--days 30] [--json]
 
 # Ethical Analysis (signals + scorecard + reflection questions)
 conscience examine [--repo <owner/repo>] [--project <path>] [--days 30] [--json]
