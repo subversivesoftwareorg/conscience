@@ -1,6 +1,6 @@
 [package]
 name = "conscience"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 description = "Evaluate the impact of AI-assisted work — measuring velocity, quality, business value, developer experience, and ethical implications"
 license = "MIT"
