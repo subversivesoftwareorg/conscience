@@ -160,6 +160,18 @@ enum ReportSource {
         #[arg(long)]
         project: Option<PathBuf>,
     },
+    /// Report on estimated energy consumption of AI usage
+    Energy {
+        /// Filter to a specific project directory
+        #[arg(long)]
+        project: Option<PathBuf>,
+        /// Number of days to look back
+        #[arg(long, default_value = "30")]
+        days: u32,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 fn parse_ai_tool(s: &str) -> Result<String, String> {
@@ -190,6 +202,7 @@ async fn main() {
         Commands::Report { source } => match source {
             ReportSource::Github { repo, days } => run_github_report(&repo, days).await,
             ReportSource::Ai { tool, project } => run_ai_report(tool.as_deref(), project.as_deref()),
+            ReportSource::Energy { project, days, json } => run_energy_report(project.as_deref(), days, json),
         },
         Commands::Authorship {
             repo,
@@ -269,6 +282,45 @@ fn run_ai_report(
                 t
             );
         }
+    }
+
+    Ok(())
+}
+
+fn run_energy_report(
+    project: Option<&std::path::Path>,
+    days: u32,
+    json_output: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let summary = ingest::ai::ingest_claude_code(project)?;
+    if summary.session_count == 0 {
+        eprintln!("No Claude Code sessions found.");
+        std::process::exit(1);
+    }
+
+    let cwd = std::env::current_dir()?;
+    let manifest_dir = project.unwrap_or(&cwd);
+    let manifest = ethics::manifest::Manifest::load(manifest_dir);
+    let config = manifest
+        .as_ref()
+        .map(|m| m.thresholds.energy.clone())
+        .unwrap_or_default();
+
+    let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
+    let filtered: Vec<_> = summary
+        .sessions
+        .iter()
+        .filter(|s| s.started_at.map_or(true, |t| t >= cutoff))
+        .cloned()
+        .collect();
+
+    let mut estimate = analysis::energy::estimate_total_energy(&filtered, &config);
+    estimate.period_days = days;
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&estimate)?);
+    } else {
+        analysis::energy_report::print_energy_report(&estimate);
     }
 
     Ok(())

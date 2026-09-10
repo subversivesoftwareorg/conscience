@@ -59,6 +59,9 @@ conscience examine-all --days 30
 # Summarize GitHub activity: commits, PRs, review patterns, contributors
 conscience report github --repo your-org/your-repo --days 30
 
+# Estimate energy consumption of AI usage with uncertainty ranges and CO2
+conscience report energy --project ~/code/your-repo --days 30
+
 # Summarize AI tool usage: sessions, tokens, tools called, files touched
 conscience report ai --project ~/code/your-repo
 
@@ -182,6 +185,27 @@ Conscience tries three methods in order:
    token = "ghp_your_token_here"
    ```
 
+### Energy Reports
+
+Estimate the energy consumption of your AI-assisted work, based on published
+research (Jegham et al. 2025, mdodkins 2026, Patterson et al. 2025):
+
+```
+# Energy breakdown by model with uncertainty ranges
+conscience report energy --days 30
+
+# Filtered to a project
+conscience report energy --project ~/code/your-repo
+
+# JSON for scripting
+conscience report energy --json
+```
+
+All figures are estimates — no provider publishes official per-model energy
+data. Uncertainty ranges are shown alongside every number. Configure
+per-model overrides and your grid's carbon intensity in
+[`conscience.yaml`](#configuration-conscienceyaml).
+
 ## Configuration: conscience.yaml
 
 Most commands work with zero configuration. To enrich the analysis with human
@@ -207,6 +231,12 @@ thresholds:
   ai_dependency_info: 6.0
   ai_dependency_concern: 12.0
   solo_project: false
+
+  # Energy estimation (conscience report energy)
+  energy:
+    grid_carbon_intensity: 0.42  # kgCO2/kWh — 0.42 US avg, 0.23 EU avg
+    overrides:
+      "my-custom-model": { wh_per_1k_input: 0.5, wh_per_1k_output: 2.0 }
 
   # Attention analysis (conscience attention)
   attention:

@@ -155,6 +155,9 @@ When evaluating a feature, PR, or sprint, Conscience should help teams ask:
 conscience ingest github --repo <owner/repo> --days 30
 conscience report github --repo <owner/repo> --days 30
 
+# Energy estimation (estimated Wh per model, CO2, uncertainty ranges)
+conscience report energy [--project <path>] [--days 30] [--json]
+
 # AI Tool Usage (Claude Code implemented; Copilot, Cursor, Codex, Windsurf, OpenClaw, NanoClaw planned)
 conscience ingest claude-code [--project <path>]
 conscience report ai [--tool claude-code] [--project <path>]
