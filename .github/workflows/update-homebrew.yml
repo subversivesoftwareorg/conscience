@@ -1,0 +1,107 @@
+name: Update Homebrew Formula
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  update-formula:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for release assets
+        run: sleep 30
+
+      - name: Download checksums
+        run: |
+          curl -sL "https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/checksums.txt" -o checksums.txt
+          cat checksums.txt
+
+      - name: Parse checksums and version
+        id: parse
+        run: |
+          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${VERSION#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+
+          echo "sha_macos_arm64=$(grep 'conscience-macos-arm64' checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "sha_linux_amd64=$(grep 'conscience-linux-amd64' checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "sha_linux_arm64=$(grep 'conscience-linux-arm64' checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+
+      - name: Clone tap repo
+        run: |
+          git clone https://x-access-token:${{ secrets.TAP_GITHUB_TOKEN }}@github.com/subversivesoftwareorg/homebrew-tap.git tap
+        env:
+          GIT_TERMINAL_PROMPT: "0"
+
+      - name: Update formula
+        run: |
+          cat > tap/Formula/conscience.rb << 'FORMULA_EOF'
+          class Conscience < Formula
+            desc "Evaluate the impact of AI-assisted work — measuring velocity, quality, and ethical implications"
+            homepage "https://github.com/subversivesoftwareorg/conscience"
+            version "${{ steps.parse.outputs.version }}"
+            license "MIT"
+
+            on_macos do
+              on_arm do
+                url "https://github.com/subversivesoftwareorg/conscience/releases/download/${{ steps.parse.outputs.tag }}/conscience-macos-arm64"
+                sha256 "${{ steps.parse.outputs.sha_macos_arm64 }}"
+              end
+
+              on_intel do
+                url "https://github.com/subversivesoftwareorg/conscience/archive/refs/tags/${{ steps.parse.outputs.tag }}.tar.gz"
+                sha256 :no_check
+                depends_on "rust" => :build
+              end
+            end
+
+            on_linux do
+              on_arm do
+                url "https://github.com/subversivesoftwareorg/conscience/releases/download/${{ steps.parse.outputs.tag }}/conscience-linux-arm64"
+                sha256 "${{ steps.parse.outputs.sha_linux_arm64 }}"
+              end
+
+              on_intel do
+                url "https://github.com/subversivesoftwareorg/conscience/releases/download/${{ steps.parse.outputs.tag }}/conscience-linux-amd64"
+                sha256 "${{ steps.parse.outputs.sha_linux_amd64 }}"
+              end
+            end
+
+            def install
+              if build.head? || File.exist?("Cargo.toml")
+                system "cargo", "install", *std_cargo_args
+              else
+                bin.install Dir["conscience*"].first => "conscience"
+              end
+            end
+
+            test do
+              assert_match "conscience", shell_output("#{bin}/conscience --version")
+            end
+          end
+          FORMULA_EOF
+
+          # Fix indentation (heredoc adds leading spaces)
+          sed -i 's/^          //' tap/Formula/conscience.rb
+
+      - name: Create PR
+        working-directory: tap
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          BRANCH="update-conscience-${{ steps.parse.outputs.version }}"
+          git checkout -b "$BRANCH"
+          git add Formula/conscience.rb
+          git commit -m "Update conscience to ${{ steps.parse.outputs.version }}"
+          git push origin "$BRANCH"
+          gh pr create \
+            --title "Update conscience to ${{ steps.parse.outputs.version }}" \
+            --body "Automated update from [conscience release ${{ steps.parse.outputs.tag }}](https://github.com/${{ github.repository }}/releases/tag/${{ steps.parse.outputs.tag }})." \
+            --head "$BRANCH" \
+            --base main
+        env:
+          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
