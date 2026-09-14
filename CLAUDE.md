@@ -170,7 +170,11 @@ conscience examine [--repo <owner/repo>] [--project <path>] [--days 30] [--json]
 
 # Reflection questions for team retrospectives (works with zero data; data enriches)
 # --interactive answers each question at a prompt and prints a session summary
-conscience reflect [--repo <owner/repo>] [--project <path>] [--days 30] [--interactive] [--json]
+# --save persists answers to .conscience/reflections/ for longitudinal tracking
+conscience reflect [--repo <owner/repo>] [--project <path>] [--days 30] [--interactive] [--save [path]] [--json]
+
+# Aggregate saved reflection sessions into a team retrospective view
+conscience retro [--dir <path>] [--days 30] [--json]
 
 # Cross-project analysis across all Claude Code projects
 conscience examine-all [--days 30] [--json]

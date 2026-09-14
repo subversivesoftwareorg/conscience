@@ -85,7 +85,22 @@ enum Commands {
         /// Answer each question at a prompt, then see a session summary
         #[arg(long, short)]
         interactive: bool,
+        /// Save session answers to a JSON file (default: .conscience/reflections/YYYY-MM-DD.json)
+        #[arg(long)]
+        save: Option<Option<PathBuf>>,
         /// Output as JSON instead of formatted text
+        #[arg(long)]
+        json: bool,
+    },
+    /// Aggregate saved reflection sessions into a team retrospective view
+    Retro {
+        /// Directory containing saved reflection JSON files (default: .conscience/reflections/)
+        #[arg(long)]
+        dir: Option<PathBuf>,
+        /// Number of days to look back
+        #[arg(long, default_value = "30")]
+        days: u32,
+        /// Output as JSON
         #[arg(long)]
         json: bool,
     },
@@ -249,8 +264,10 @@ async fn main() {
             days,
             project,
             interactive,
+            save,
             json,
-        } => run_reflect(repo.as_deref(), days, project.as_deref(), interactive, json).await,
+        } => run_reflect(repo.as_deref(), days, project.as_deref(), interactive, save, json).await,
+        Commands::Retro { dir, days, json } => run_retro(dir.as_deref(), days, json),
     };
 
     if let Err(e) = result {
@@ -616,6 +633,7 @@ async fn run_reflect(
     days: u32,
     project: Option<&std::path::Path>,
     interactive: bool,
+    save: Option<Option<PathBuf>>,
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let cwd = std::env::current_dir()?;
@@ -665,6 +683,46 @@ async fn run_reflect(
         } else {
             println!();
             print!("{}", ethics::session::render_summary(&responses));
+        }
+
+        // --save: persist the session
+        if let Some(path_opt) = save {
+            let contributor = std::process::Command::new("git")
+                .args(["config", "user.name"])
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+
+            let project_name = manifest
+                .as_ref()
+                .map(|m| m.project.name.clone())
+                .filter(|n| !n.is_empty())
+                .or_else(|| {
+                    manifest_dir
+                        .file_name()
+                        .map(|n| n.to_string_lossy().to_string())
+                });
+
+            let session = ethics::session::ReflectionSession {
+                timestamp: chrono::Utc::now().to_rfc3339(),
+                contributor,
+                project: project_name,
+                responses,
+            };
+
+            let save_path = match path_opt {
+                Some(p) => p,
+                None => {
+                    let dir = manifest_dir.join(".conscience").join("reflections");
+                    std::fs::create_dir_all(&dir)?;
+                    dir.join(format!("{}.json", chrono::Utc::now().format("%Y-%m-%d")))
+                }
+            };
+
+            let json = serde_json::to_string_pretty(&session)?;
+            std::fs::write(&save_path, &json)?;
+            eprintln!("Session saved to {}", save_path.display());
         }
     } else if json_output {
         println!("{}", serde_json::to_string_pretty(&reflections)?);
@@ -727,6 +785,77 @@ async fn run_evaluate(
         println!("{}", output);
     } else {
         ethics::report::print_ethical_analysis(&analysis);
+    }
+
+    Ok(())
+}
+
+fn run_retro(
+    dir: Option<&std::path::Path>,
+    _days: u32,
+    json_output: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let cwd = std::env::current_dir()?;
+    let reflections_dir = dir.unwrap_or_else(|| &cwd).join(".conscience").join("reflections");
+
+    if !reflections_dir.exists() {
+        eprintln!(
+            "No reflections directory at {}. Run `conscience reflect -i --save` first.",
+            reflections_dir.display()
+        );
+        std::process::exit(1);
+    }
+
+    let mut sessions = Vec::new();
+    for entry in std::fs::read_dir(&reflections_dir)?.flatten() {
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "json") {
+            match std::fs::read_to_string(&path) {
+                Ok(content) => match serde_json::from_str::<ethics::session::ReflectionSession>(&content) {
+                    Ok(session) => sessions.push(session),
+                    Err(e) => eprintln!("Warning: skipping {}: {}", path.display(), e),
+                },
+                Err(e) => eprintln!("Warning: could not read {}: {}", path.display(), e),
+            }
+        }
+    }
+
+    if sessions.is_empty() {
+        eprintln!("No reflection sessions found in {}", reflections_dir.display());
+        std::process::exit(1);
+    }
+
+    eprintln!("Found {} reflection session(s)", sessions.len());
+
+    let aggregate = ethics::session::aggregate_sessions(&sessions);
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&aggregate)?);
+    } else {
+        println!();
+        println!(
+            "  Conscience \u{2014} Team Retrospective ({} sessions, {} contributors)",
+            aggregate.session_count,
+            aggregate.contributors.len()
+        );
+        println!("  Contributors: {}", aggregate.contributors.join(", "));
+        println!();
+
+        for pa in &aggregate.by_principle {
+            println!("  {} [{}]", pa.question, pa.principle.name());
+            if pa.answers.is_empty() && pa.skipped > 0 {
+                println!("    (all {} respondents skipped)", pa.skipped);
+            } else {
+                for ca in &pa.answers {
+                    let who = ca.contributor.as_deref().unwrap_or("(anonymous)");
+                    println!("    {} \u{2014} {}", who, ca.answer);
+                }
+                if pa.skipped > 0 {
+                    println!("    ({} skipped)", pa.skipped);
+                }
+            }
+            println!();
+        }
     }
 
     Ok(())

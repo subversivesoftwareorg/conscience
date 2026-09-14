@@ -1,7 +1,17 @@
 use crate::ethics::models::{Principle, ReflectionQuestion};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io::{BufRead, Write};
+
+/// A saved reflection session with metadata for longitudinal tracking.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReflectionSession {
+    pub timestamp: String,
+    pub contributor: Option<String>,
+    pub project: Option<String>,
+    pub responses: Vec<ReflectionResponse>,
+}
 
 /// One answered (or skipped) reflection question from an interactive session.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,4 +121,71 @@ pub fn render_summary(responses: &[ReflectionResponse]) -> String {
     }
 
     out
+}
+
+/// One contributor's answer to a question.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContributorAnswer {
+    pub contributor: Option<String>,
+    pub timestamp: String,
+    pub answer: String,
+}
+
+/// Aggregated view of a single principle across all sessions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrincipleAggregate {
+    pub principle: Principle,
+    pub question: String,
+    pub answers: Vec<ContributorAnswer>,
+    pub skipped: u64,
+}
+
+/// Aggregated view across multiple reflection sessions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetroAggregate {
+    pub session_count: u64,
+    pub contributors: Vec<String>,
+    pub by_principle: Vec<PrincipleAggregate>,
+}
+
+pub fn aggregate_sessions(sessions: &[ReflectionSession]) -> RetroAggregate {
+    let mut contributors: Vec<String> = Vec::new();
+    let mut by_key: BTreeMap<String, PrincipleAggregate> = BTreeMap::new();
+
+    for session in sessions {
+        if let Some(c) = &session.contributor {
+            if !contributors.contains(c) {
+                contributors.push(c.clone());
+            }
+        }
+
+        for r in &session.responses {
+            let key = format!("{:?}:{}", r.principle, r.question);
+            let entry = by_key.entry(key).or_insert_with(|| PrincipleAggregate {
+                principle: r.principle,
+                question: r.question.clone(),
+                answers: Vec::new(),
+                skipped: 0,
+            });
+
+            match &r.answer {
+                Some(text) => {
+                    entry.answers.push(ContributorAnswer {
+                        contributor: session.contributor.clone(),
+                        timestamp: session.timestamp.clone(),
+                        answer: text.clone(),
+                    });
+                }
+                None => {
+                    entry.skipped += 1;
+                }
+            }
+        }
+    }
+
+    RetroAggregate {
+        session_count: sessions.len() as u64,
+        contributors,
+        by_principle: by_key.into_values().collect(),
+    }
 }
