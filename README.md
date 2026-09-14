@@ -39,6 +39,9 @@ cargo install --path .
 One command per thing you're most likely to want. Each is covered in depth in [Usage](#usage) below.
 
 ```bash
+# Check what's set up and what needs configuring
+conscience setup
+
 # Full ethical analysis: signals, scorecard, and reflection questions
 # for a repo and the Claude Code sessions that built it
 conscience examine --repo your-org/your-repo --project ~/code/your-repo --days 30

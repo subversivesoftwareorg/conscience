@@ -182,6 +182,9 @@ conscience push --repo <owner/repo> --project <path> [--endpoint <url>]
 conscience attention [--days 7] [--project <path>] [--json] [--html <output.html>]
 ```
 
+# Check setup status (green/red checklist with directions)
+conscience setup
+
 # Ethical analysis scoped to a single PR
 conscience evaluate --pr <url|owner/repo#N> [--project <path>] [--json]
 

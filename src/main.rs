@@ -104,6 +104,8 @@ enum Commands {
         #[arg(long)]
         html: Option<PathBuf>,
     },
+    /// Check which integrations are configured and show setup directions
+    Setup,
     /// Ethical analysis scoped to a single pull request
     Evaluate {
         /// GitHub PR URL (https://github.com/owner/repo/pull/N) or short form (owner/repo#N)
@@ -232,6 +234,7 @@ async fn main() {
             project,
             endpoint,
         } => run_push(repo.as_deref(), days, project.as_deref(), endpoint.as_deref()).await,
+        Commands::Setup => run_setup(),
         Commands::Evaluate { pr, project, json } => {
             run_evaluate(&pr, project.as_deref(), json).await
         }
@@ -254,6 +257,124 @@ async fn main() {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }
+}
+
+fn run_setup() -> Result<(), Box<dyn std::error::Error>> {
+    use std::process::Command;
+
+    let ok = "\x1b[32m\u{2713}\x1b[0m";
+    let fail = "\x1b[31m\u{2717}\x1b[0m";
+
+    println!();
+    println!("  Conscience Setup");
+    println!();
+
+    // 1. GitHub authentication
+    let gh_installed = Command::new("gh").arg("--version").output().is_ok();
+    if !gh_installed {
+        println!("  {} GitHub CLI (gh not found)", fail);
+        println!("    \u{2192} Install: https://cli.github.com/");
+        println!("    \u{2192} Then run: gh auth login");
+    } else {
+        match Command::new("gh").args(["auth", "token"]).output() {
+            Ok(output) if output.status.success() => {
+                println!("  {} GitHub authentication (gh CLI authenticated)", ok);
+            }
+            _ => {
+                let has_env = std::env::var("CONSCIENCE_GITHUB_TOKEN")
+                    .map(|t| !t.is_empty())
+                    .unwrap_or(false);
+                let has_config = Config::load().github.token.is_some();
+                if has_env {
+                    println!("  {} GitHub authentication (CONSCIENCE_GITHUB_TOKEN set)", ok);
+                } else if has_config {
+                    println!("  {} GitHub authentication (~/.conscience/config.toml)", ok);
+                } else {
+                    println!("  {} GitHub authentication (not configured)", fail);
+                    println!("    \u{2192} Easiest: gh auth login");
+                    println!("    \u{2192} Or set CONSCIENCE_GITHUB_TOKEN environment variable");
+                    println!("    \u{2192} Or add token to ~/.conscience/config.toml");
+                }
+            }
+        }
+    }
+
+    // 2. conscience.yaml
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let has_manifest = cwd.join("conscience.yaml").exists() || cwd.join(".conscience.yaml").exists();
+    if has_manifest {
+        println!("  {} conscience.yaml (found in current directory)", ok);
+    } else {
+        println!("  {} conscience.yaml (not found in current directory)", fail);
+        println!("    \u{2192} Create conscience.yaml with your project name and mission");
+        println!("    \u{2192} See: https://github.com/subversivesoftwareorg/conscience#configuration-conscienceyaml");
+    }
+
+    // 3. Claude Code logs
+    let claude_dir = dirs::home_dir()
+        .unwrap_or_default()
+        .join(".claude")
+        .join("projects");
+    if claude_dir.exists() {
+        let session_count = std::fs::read_dir(&claude_dir)
+            .into_iter()
+            .flatten()
+            .flat_map(|e| {
+                let p = e.ok()?.path();
+                if p.is_dir() {
+                    Some(
+                        std::fs::read_dir(&p)
+                            .into_iter()
+                            .flatten()
+                            .flatten()
+                            .filter(|f| {
+                                f.path().extension().is_some_and(|e| e == "jsonl")
+                            })
+                            .count(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .sum::<usize>();
+        println!(
+            "  {} Claude Code logs ({} sessions found in ~/.claude/projects/)",
+            ok, session_count
+        );
+    } else {
+        println!("  {} Claude Code logs (no ~/.claude/projects/ directory)", fail);
+        println!("    \u{2192} Use Claude Code to generate session logs automatically");
+        println!("    \u{2192} Logs appear after your first Claude Code session");
+    }
+
+    // 4. Dashboard
+    let config = Config::load();
+    let has_dashboard = std::env::var("CONSCIENCE_DASHBOARD_URL").is_ok()
+        || config.dashboard.endpoint.is_some();
+    if has_dashboard {
+        let endpoint = std::env::var("CONSCIENCE_DASHBOARD_URL")
+            .ok()
+            .or(config.dashboard.endpoint)
+            .unwrap_or_default();
+        println!("  {} Dashboard endpoint ({})", ok, endpoint);
+    } else {
+        println!("  {} Dashboard endpoint (not configured \u{2014} optional)", fail);
+        println!("    \u{2192} Set CONSCIENCE_DASHBOARD_URL or add [dashboard] to ~/.conscience/config.toml");
+    }
+
+    // 5. GitHub Actions workflow
+    let has_workflow = std::path::Path::new(".github/workflows/conscience.yml").exists();
+    if has_workflow {
+        println!("  {} GitHub Actions workflow (.github/workflows/conscience.yml)", ok);
+    } else {
+        println!("  {} GitHub Actions workflow (not found \u{2014} optional)", fail);
+        println!("    \u{2192} Copy conscience.yml from the conscience repo to .github/workflows/");
+        println!("    \u{2192} Runs ethical analysis on PRs and weekly");
+    }
+
+    println!();
+
+    Ok(())
 }
 
 async fn run_github_ingest(repo: &str, days: u32) -> Result<(), Box<dyn std::error::Error>> {
