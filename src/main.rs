@@ -390,6 +390,24 @@ fn run_setup() -> Result<(), Box<dyn std::error::Error>> {
         println!("    \u{2192} Logs appear after your first Claude Code session");
     }
 
+    // 3b. Other AI tools
+    use crate::ai_tools::parser::AiToolParser;
+    let other_tools: Vec<Box<dyn AiToolParser>> = vec![
+        Box::new(ai_tools::copilot::CopilotParser),
+        Box::new(ai_tools::cursor::CursorParser),
+        Box::new(ai_tools::codex::CodexParser),
+        Box::new(ai_tools::windsurf::WindsurfParser),
+    ];
+    for tool in &other_tools {
+        if tool.detect() {
+            println!(
+                "  {} {} (detected at {} \u{2014} parser not yet implemented)",
+                ok, tool.tool_name(), tool.data_path()
+            );
+            println!("    \u{2192} Help us build the parser: share sample log data in the GitHub issue");
+        }
+    }
+
     // 4. Dashboard
     let config = Config::load();
     let has_dashboard = std::env::var("CONSCIENCE_DASHBOARD_URL").is_ok()
