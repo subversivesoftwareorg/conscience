@@ -395,7 +395,7 @@ fn run_setup() -> Result<(), Box<dyn std::error::Error>> {
     let other_tools: Vec<Box<dyn AiToolParser>> = vec![
         Box::new(ai_tools::copilot::CopilotParser),
         Box::new(ai_tools::cursor::CursorParser),
-        Box::new(ai_tools::codex::CodexParser),
+        Box::new(ai_tools::codex::CodexParser::new()),
         Box::new(ai_tools::windsurf::WindsurfParser),
     ];
     for tool in &other_tools {
@@ -465,14 +465,29 @@ fn run_ai_report(
     project: Option<&std::path::Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let show_claude = tool.is_none() || tool == Some("claude-code");
+    let show_codex = tool.is_none() || tool == Some("codex");
 
     if show_claude {
         let summary = ingest::ai::ingest_claude_code(project)?;
         ai_tools::report::print_ai_summary(&summary);
     }
 
+    if show_codex {
+        use crate::ai_tools::parser::AiToolParser as _;
+        let parser = ai_tools::codex::CodexParser::new();
+        if parser.detect() {
+            match parser.parse(project) {
+                Ok(summary) if summary.session_count > 0 => {
+                    ai_tools::report::print_ai_summary(&summary);
+                }
+                Ok(_) => {}
+                Err(e) => eprintln!("  Warning: Codex parser error: {}", e),
+            }
+        }
+    }
+
     if let Some(t) = tool {
-        if t != "claude-code" {
+        if !matches!(t, "claude-code" | "codex") {
             eprintln!(
                 "Parser for '{}' is not yet implemented. \
                 Contributions welcome!",
