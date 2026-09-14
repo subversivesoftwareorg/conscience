@@ -47,6 +47,9 @@ conscience examine --repo your-org/your-repo --project ~/code/your-repo --days 3
 # at a prompt and get a session summary
 conscience reflect --repo your-org/your-repo --project ~/code/your-repo --interactive
 
+# Evaluate a single PR through the ethical lens
+conscience evaluate --pr https://github.com/your-org/your-repo/pull/42
+
 # See how your attention moved across projects this week —
 # active time, context switches, flow episodes — with an HTML timeline
 conscience attention --days 7 --html attention.html
@@ -144,6 +147,30 @@ conscience attention --days 14 --html attention.html
 # JSON for scripting
 conscience attention --json
 ```
+
+### PR Evaluation
+
+Run the full ethical analysis scoped to a single pull request:
+
+```
+# Full URL
+conscience evaluate --pr https://github.com/your-org/your-repo/pull/42
+
+# Short form
+conscience evaluate --pr your-org/your-repo#42
+
+# With AI session context (was this PR built during an AI session?)
+conscience evaluate --pr your-org/your-repo#42 --project ~/code/your-repo
+
+# JSON
+conscience evaluate --pr your-org/your-repo#42 --json
+```
+
+The output shows the PR's diff stats (additions, deletions, files, review
+comments) followed by the standard signals, scorecard, and reflection
+questions — all scoped to that PR's data.
+
+### Attention & Flow
 
 Active-time estimates are floors (only Claude Code activity is visible), and
 per-project figures are ranges reflecting attribution uncertainty. What counts

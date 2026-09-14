@@ -104,6 +104,18 @@ enum Commands {
         #[arg(long)]
         html: Option<PathBuf>,
     },
+    /// Ethical analysis scoped to a single pull request
+    Evaluate {
+        /// GitHub PR URL (https://github.com/owner/repo/pull/N) or short form (owner/repo#N)
+        #[arg(long)]
+        pr: String,
+        /// Project directory to enrich with AI session context
+        #[arg(long)]
+        project: Option<PathBuf>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Ethical analysis: signals, scorecard, and reflection questions
     Examine {
         /// GitHub repository (owner/repo)
@@ -220,6 +232,9 @@ async fn main() {
             project,
             endpoint,
         } => run_push(repo.as_deref(), days, project.as_deref(), endpoint.as_deref()).await,
+        Commands::Evaluate { pr, project, json } => {
+            run_evaluate(&pr, project.as_deref(), json).await
+        }
         Commands::Examine {
             repo,
             days,
@@ -538,6 +553,59 @@ async fn run_reflect(
             "{}",
             ethics::report::render_reflection_session(&reflections)
         );
+    }
+
+    Ok(())
+}
+
+async fn run_evaluate(
+    pr_url: &str,
+    project: Option<&std::path::Path>,
+    json_output: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let github_summary = ingest::github::ingest_pr(pr_url).await?;
+
+    let cwd = std::env::current_dir()?;
+    let manifest_dir = project.unwrap_or(&cwd);
+    let manifest = ethics::manifest::Manifest::load(manifest_dir);
+
+    let ai_summary = {
+        let summary = ingest::ai::ingest_claude_code(project)?;
+        if summary.session_count > 0 {
+            Some(summary)
+        } else {
+            None
+        }
+    };
+
+    let analysis = ethics::analyze(
+        Some(&github_summary),
+        ai_summary.as_ref(),
+        manifest.as_ref(),
+    );
+
+    let pr = &github_summary.pull_requests[0];
+    if !json_output {
+        println!();
+        println!(
+            "  Conscience \u{2014} PR #{}: \"{}\"",
+            pr.number, pr.title
+        );
+        println!(
+            "  by {} | +{}/\u{2212}{} | {} files | {} review comments",
+            pr.author,
+            pr.additions.unwrap_or(0),
+            pr.deletions.unwrap_or(0),
+            pr.changed_files.unwrap_or(0),
+            pr.review_comments,
+        );
+    }
+
+    if json_output {
+        let output = serde_json::to_string_pretty(&analysis)?;
+        println!("{}", output);
+    } else {
+        ethics::report::print_ethical_analysis(&analysis);
     }
 
     Ok(())

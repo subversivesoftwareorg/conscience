@@ -182,10 +182,8 @@ conscience push --repo <owner/repo> --project <path> [--endpoint <url>]
 conscience attention [--days 7] [--project <path>] [--json] [--html <output.html>]
 ```
 
-### Planned Commands
-```
-conscience evaluate --pr <url>
-```
+# Ethical analysis scoped to a single PR
+conscience evaluate --pr <url|owner/repo#N> [--project <path>] [--json]
 
 ## References
 
