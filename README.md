@@ -1,18 +1,8 @@
 # Conscience
 
-A tool for evaluating the impact of AI-assisted work — measuring not just velocity and output, but whether AI is serving human flourishing.
+A CLI tool for evaluating the impact of AI-assisted work — measuring not just velocity and output, but whether AI is serving human flourishing.
 
 Conscience asks the question posed by Pope Leo XIV in *Magnifica Humanitas*: **"Does AI make human life on earth 'more human' in every aspect of that life?"**
-
-## What It Does
-
-Conscience pulls data from GitHub and AI tool logs, then runs a three-layer ethical analysis:
-
-1. **Signals** — Automated pattern detection: contribution concentration, review gaps, AI dependency ratios, token consumption. Flags concerns *and* healthy patterns.
-2. **Scorecard** — Maps signals to seven ethical principles drawn from [Magnifica Humanitas](https://www.vatican.va/content/leo-xiv/en/encyclicals/documents/20260515-magnifica-humanitas.html) and the [Leiden Declaration on AI and Mathematics](https://leidendeclaration.ai). Marks which dimensions need human assessment.
-3. **Reflection Questions** — Data-informed questions for team retrospectives. Populated with real numbers but answered by humans, not algorithms.
-
-This is a discernment tool, not a surveillance tool. It is designed for teams to evaluate themselves.
 
 ## Install
 
@@ -21,439 +11,66 @@ This is a discernment tool, not a surveillance tool. It is designed for teams to
 brew tap subversivesoftwareorg/tap
 brew install conscience
 
-# From crates.io (any platform with Rust installed)
+# From crates.io
 cargo install conscience
 
 # Prebuilt binaries (Linux amd64/arm64, macOS arm64)
-# Download from the Releases page and place in your PATH:
 # https://github.com/subversivesoftwareorg/conscience/releases
-
-# From source
-git clone https://github.com/subversivesoftwareorg/conscience
-cd conscience
-cargo install --path .
 ```
 
 ## Quick Start
 
-One command per thing you're most likely to want. Each is covered in depth in [Usage](#usage) below.
-
 ```bash
-# Check what's set up and what needs configuring
-conscience setup
-
-# Full ethical analysis: signals, scorecard, and reflection questions
-# for a repo and the Claude Code sessions that built it
-conscience examine --repo your-org/your-repo --project ~/code/your-repo --days 30
-
-# Run a team retrospective: answer data-enriched reflection questions
-# at a prompt and get a session summary
-conscience reflect --repo your-org/your-repo --project ~/code/your-repo --interactive
-
-# Evaluate a single PR through the ethical lens
-conscience evaluate --pr https://github.com/your-org/your-repo/pull/42
-
-# See how your attention moved across projects this week —
-# active time, context switches, flow episodes — with an HTML timeline
-conscience attention --days 7 --html attention.html
-
-# Estimate who is writing code vs. operating AI tools, by correlating
-# commit timestamps with AI session activity
-conscience authorship --repo your-org/your-repo --project ~/code/your-repo --days 30
-
-# Scan every Claude Code project on this machine and flag outliers
-# (token consumption, AI dependency, security signals)
-conscience examine-all --days 30
-
-# Summarize GitHub activity: commits, PRs, review patterns, contributors
-conscience report github --repo your-org/your-repo --days 30
-
-# Estimate energy consumption of AI usage with uncertainty ranges and CO2
-conscience report energy --project ~/code/your-repo --days 30
-
-# Summarize AI tool usage: sessions, tokens, tools called, files touched
-conscience report ai --project ~/code/your-repo
-
-# Emit raw JSON for scripting (same data the reports format)
-conscience ingest github --repo your-org/your-repo --days 30 > github.json
-conscience ingest claude-code --project ~/code/your-repo > sessions.json
-
-# Push an analysis snapshot to your team's dashboard for trend tracking
-conscience push --repo your-org/your-repo --project ~/code/your-repo --endpoint https://dashboard.example.com
+conscience setup                     # see what's configured
+conscience examine --project .       # run your first ethical analysis
+conscience reflect -i --project .    # answer reflection questions interactively
 ```
 
-`--repo` needs GitHub access ([three auth options](#github-authentication));
-`--project` commands read local Claude Code logs and need no setup. A
-[`conscience.yaml`](#configuration-conscienceyaml) enriches any of them.
-
-## Usage
-
-### Ethical Analysis
-
-The core command. Combines GitHub data and AI tool logs into a single analysis:
-
-```
-conscience examine --repo your-org/your-repo --project /path/to/project
-```
-
-This produces signals, a scorecard, and reflection questions. You can use either data source alone:
-
-```
-# GitHub data only
-conscience examine --repo your-org/your-repo --days 14
-
-# AI tool logs only
-conscience examine --project /path/to/project
-
-# JSON output (for piping to other tools)
-conscience examine --repo your-org/your-repo --json
-```
-
-### Team Reflection
-
-Generate just the reflection questions, formatted for a retrospective. Works with
-no data at all — the questions stand on their own — but GitHub activity, AI session
-logs, and a `conscience.yaml` manifest enrich them with real context:
-
-```
-# Questions enriched with GitHub and AI session data
-conscience reflect --repo your-org/your-repo --project /path/to/project
-
-# Bare questions, no data required
-conscience reflect
-
-# JSON output
-conscience reflect --project /path/to/project --json
-```
-
-Add `--interactive` (`-i`) to answer each question at a prompt and get a
-session summary. Answers are multi-line: a blank line finishes an answer,
-and pressing Enter right away skips the question. With `--json`, the
-answered session is emitted as JSON instead — handy for saving:
-
-```
-conscience reflect -i --project /path/to/project
-conscience reflect -i --json > retro-$(date +%F).json
-```
-
-### Attention & Flow
-
-Analyze how your time and attention move across projects:
-
-```
-# Weekly attention summary (default 7 days)
-conscience attention
-
-# With an HTML timeline visualization
-conscience attention --days 14 --html attention.html
-
-# JSON for scripting
-conscience attention --json
-```
-
-### PR Evaluation
-
-Run the full ethical analysis scoped to a single pull request:
-
-```
-# Full URL
-conscience evaluate --pr https://github.com/your-org/your-repo/pull/42
-
-# Short form
-conscience evaluate --pr your-org/your-repo#42
-
-# With AI session context (was this PR built during an AI session?)
-conscience evaluate --pr your-org/your-repo#42 --project ~/code/your-repo
-
-# JSON
-conscience evaluate --pr your-org/your-repo#42 --json
-```
-
-The output shows the PR's diff stats (additions, deletions, files, review
-comments) followed by the standard signals, scorecard, and reflection
-questions — all scoped to that PR's data.
-
-### Attention & Flow
-
-Active-time estimates are floors (only Claude Code activity is visible), and
-per-project figures are ranges reflecting attribution uncertainty. What counts
-as "idle" and "flow" is configurable — see the `attention` block under
-[Configuration](#configuration-conscienceyaml) below.
-
-### GitHub Reports
-
-```
-# Formatted summary: commits, PRs, contributors
-conscience report github --repo your-org/your-repo --days 30
-
-# Raw JSON (pipe to jq, save to file, etc.)
-conscience ingest github --repo your-org/your-repo --days 30
-```
-
-### AI Tool Usage Reports
-
-```
-# Claude Code usage across all projects
-conscience report ai
-
-# Filtered to a specific project
-conscience report ai --project /path/to/project
-
-# Filtered to a specific tool
-conscience report ai --tool claude-code
-
-# Raw JSON
-conscience ingest claude-code --project /path/to/project
-```
-
-## GitHub Authentication
-
-Conscience tries three methods in order:
-
-1. **`gh` CLI** — If you have [GitHub CLI](https://cli.github.com/) installed and authenticated, it just works. Zero config.
-2. **Environment variable** — Set `CONSCIENCE_GITHUB_TOKEN` to a personal access token.
-3. **Config file** — Create `~/.conscience/config.toml`:
-   ```toml
-   [github]
-   token = "ghp_your_token_here"
-   ```
-
-### Energy Reports
-
-Estimate the energy consumption of your AI-assisted work, based on published
-research (Jegham et al. 2025, mdodkins 2026, Patterson et al. 2025):
-
-```
-# Energy breakdown by model with uncertainty ranges
-conscience report energy --days 30
-
-# Filtered to a project
-conscience report energy --project ~/code/your-repo
-
-# JSON for scripting
-conscience report energy --json
-```
-
-All figures are estimates — no provider publishes official per-model energy
-data. Uncertainty ranges are shown alongside every number. Configure
-per-model overrides and your grid's carbon intensity in
-[`conscience.yaml`](#configuration-conscienceyaml).
-
-## Configuration: conscience.yaml
-
-Most commands work with zero configuration. To enrich the analysis with human
-context — and to tune thresholds to your team's style (subsidiarity: you define
-your own evaluation criteria) — put a `conscience.yaml` in your project root.
-This repo's own [`conscience.yaml`](conscience.yaml) is a working example.
-
-```yaml
-project:
-  name: "My Project"
-  mission: "What this project is for"
-  beneficiaries:
-    - name: "Who benefits"
-      description: "How"
-
-team:
-  size: 3
-  learning_goals:
-    - "What the team is trying to learn"
-
-thresholds:
-  # AI:Human ratio thresholds (see upgrade note below)
-  ai_dependency_info: 6.0
-  ai_dependency_concern: 12.0
-  solo_project: false
-
-  # Energy estimation (conscience report energy)
-  energy:
-    grid_carbon_intensity: 0.42  # kgCO2/kWh — 0.42 US avg, 0.23 EU avg
-    overrides:
-      "my-custom-model": { wh_per_1k_input: 0.5, wh_per_1k_output: 2.0 }
-
-  # Attention analysis (conscience attention)
-  attention:
-    idle_minutes: 15            # gaps longer than this are idle, not active time
-    engagement_floor_minutes: 2 # credit for an isolated prompt
-    flow_gap_minutes: 10        # max gap inside a flow episode
-    flow_min_minutes: 20        # minimum span to count as flow
-    project_aliases:            # fold worktrees/scratch dirs into one project
-      "/private/tmp/worktrees/*": my-project
-```
-
-All fields are optional; defaults apply when absent. `examine`, `reflect`,
-`push`, and `attention` load the manifest from the current directory or
-`--project`.
-
-## AI Tool Support
-
-| Tool | Status | Data Source |
-|------|--------|------------|
-| Claude Code | Implemented | `~/.claude/projects/` session logs |
-| GitHub Copilot | Planned | — |
-| Cursor | Planned | — |
-| OpenAI Codex | Planned | — |
-| Windsurf | Planned | — |
-| OpenClaw | Planned | — |
-| NanoClaw | Planned | — |
-
-Adding a new AI tool parser means implementing the `AiToolParser` trait — roughly 100-200 lines of Rust.
-
-**Upgrading: AI:Human ratio threshold change.** As of the attention-analysis release, tool-result messages are no longer counted as human turns when computing AI:Human ratios. This means ratios are substantially higher than before for the same sessions. The default `ai_dependency_info` and `ai_dependency_concern` thresholds were recalibrated to 6.0 and 12.0 respectively. If you have set custom ratio thresholds in your `conscience.yaml`, you should re-tune them against the new counting method.
-
-### Cross-Project Analysis
-
-Scan all your Claude Code projects at once, identify outliers:
-
-```
-# See all projects ranked by token usage, with outlier detection
-conscience examine-all
-
-# JSON for piping to dashboards
-conscience examine-all --json
-```
-
-### Dashboard Integration
-
-Push analysis results to a central dashboard server for historical tracking:
-
-```
-# Configure endpoint
-export CONSCIENCE_DASHBOARD_URL=https://your-dashboard.example.com
-
-# Push analysis
-conscience push --repo your-org/your-repo --project /path/to/project
-```
-
-Or configure in `~/.conscience/config.toml`:
-```toml
-[dashboard]
-endpoint = "https://your-dashboard.example.com"
-api_key = "your-api-key"
-```
-
-### Authorship Analysis
-
-Detect whether developers are writing code or operating AI tools:
-
-```
-conscience authorship --repo your-org/your-repo --project /path/to/project --days 30
-```
-
-This cross-references GitHub commit timestamps with Claude Code session timestamps to calculate an AI authorship correlation percentage per contributor.
-
-### GitHub Actions
-
-Copy `.github/workflows/conscience.yml` into your repo. It runs ethical analysis on PRs and weekly, posting results as GitHub annotations and PR comments.
-
-## The Seven Principles
-
-Each principle maps to a concrete source in the reference documents:
-
-| Principle | Question | Source |
-|-----------|----------|--------|
-| **Human Agency** | Are humans directing the work, or becoming dependent? | MH 150 |
-| **Equity of Benefit** | Are AI tools benefiting all team members? | MH 73, 77 |
-| **Transparency** | Is AI involvement disclosed? | Leiden O1 |
-| **Developer Growth** | Are team members learning, or being de-skilled? | MH 52, 129 |
-| **Environmental Cost** | Is AI usage proportionate to value delivered? | MH 101 |
-| **Code Provenance** | Do humans understand and own AI-generated code? | Leiden O4-O6 |
-| **Security** | Are AI tools being used safely? Signs of misuse or data exposure? | MH 104, Leiden O4 |
-
-### Security Signal Detection
-
-Conscience detects abuse patterns automatically:
-
-- **Tokenmaxxing** — Sessions with high token-to-file ratios (lots of compute, nothing to show), excessive tokens per turn, or 12+ hour unattended sessions
-- **Sensitive file access** — AI reading or writing `.env`, credentials, keys, secrets
-- **Suspicious bash** — Network exfiltration patterns (piped curl, netcat), encoding/obfuscation (base64 piping), credential directory access
-- **Prompt injection** — PR descriptions containing instruction override patterns, zero-width characters, or conversation injection attempts
-
-## Example Output
-
-```
-  Conscience — Ethical Analysis
-
-  Signals
-
-  WARNING High contribution concentration [Equity of Benefit]
-          Top 2 of 8 contributors account for 87% of commits.
-          AI may be amplifying existing imbalances.
-          Evidence: 142 commits across 8 authors
-
-  CONCERN Low review engagement [Human Agency]
-          78% of merged PRs had zero review comments.
-          Are humans reviewing AI-generated code, or rubber-stamping it?
-          Evidence: 14 of 18 merged PRs with no review comments
-
-  HEALTHY Balanced AI:Human interaction [Human Agency]
-          AI:Human ratio of 1.4:1 suggests humans are directing the work.
-          Evidence: 136 assistant turns vs 99 human turns
-
-  HEALTHY Good cache efficiency [Environmental Cost]
-          95% cache hit rate — reusing context rather than recomputing it.
-          Evidence: 14.5M cache reads vs 0.8M cache creates
-
-  Scorecard
-
-  ╭────────────────────┬─────────┬───────────────────╮
-  │ Principle          │ Signals │ Status            │
-  ├────────────────────┼─────────┼───────────────────┤
-  │ Human Agency       │ 2       │ CONCERN           │
-  │ Equity of Benefit  │ 1       │ WARNING           │
-  │ Transparency       │ 1       │ INFO              │
-  │ Developer Growth   │ 0       │ Needs human input │
-  │ Environmental Cost │ 1       │ HEALTHY           │
-  │ Code Provenance    │ 0       │ Needs human input │
-  │ Security           │ 0       │ HEALTHY           │
-  ╰────────────────────┴─────────┴───────────────────╯
-
-  Reflection Questions
-  For team discussion — not automated judgment.
-
-  1. Are team members learning new skills through this work,
-     or becoming more dependent on AI?
-
-  2. Who benefits from the work shipped this period?
-
-  3. Would we be comfortable if a stakeholder asked exactly
-     how AI was used in this work?
-
-  4. Is the AI compute consumed proportionate to the value
-     delivered?
-
-  5. Is this work building Jerusalem — shared responsibility,
-     piece by piece? Or is it building Babel — impressive but
-     concentrated, optimizing for output over human connection?
-```
-
-## Ethical Framework
-
-Conscience is grounded in two documents (included in `refs/`):
-
-**Magnifica Humanitas** (Pope Leo XIV, May 2026) — An encyclical on safeguarding the human person in the time of artificial intelligence. It provides five principles that Conscience operationalizes: human dignity, common good, subsidiarity, solidarity, and social justice.
-
-**Leiden Declaration on AI and Mathematics** (June 2026) — Practical recommendations from the mathematical community on responsible AI use: disclose tool use, retain responsibility for correctness, affirm the humanity of authorship, and evaluate ethical consequences.
-
-The project name comes from the encyclical's insistence that "crucial questions impose themselves on our conscience and can no longer be avoided: Where are we going? Toward what goal do we wish to orient ourselves?" (MH 6).
+See the **[Getting Started guide](https://github.com/subversivesoftwareorg/conscience/wiki/Getting-Started)** for a complete walkthrough.
+
+## Documentation
+
+Full documentation lives in the **[Wiki](https://github.com/subversivesoftwareorg/conscience/wiki)**.
+
+### By use case
+
+| I want to... | Guide |
+|---|---|
+| Set up conscience for the first time | [Getting Started](https://github.com/subversivesoftwareorg/conscience/wiki/Getting-Started) |
+| Run a team retrospective | [Running a Team Retrospective](https://github.com/subversivesoftwareorg/conscience/wiki/Running-a-Team-Retrospective) |
+| Evaluate a pull request | [Evaluating a Pull Request](https://github.com/subversivesoftwareorg/conscience/wiki/Evaluating-a-Pull-Request) |
+| Understand my attention patterns | [Understanding Your Attention Patterns](https://github.com/subversivesoftwareorg/conscience/wiki/Understanding-Your-Attention-Patterns) |
+| Measure energy consumption | [Measuring Energy Cost](https://github.com/subversivesoftwareorg/conscience/wiki/Measuring-Energy-Cost) |
+| Set up CI/CD analysis | [Setting Up CI/CD](https://github.com/subversivesoftwareorg/conscience/wiki/Setting-Up-CI-CD) |
+| Track trends with a dashboard | [Tracking Trends with a Dashboard](https://github.com/subversivesoftwareorg/conscience/wiki/Tracking-Trends-with-a-Dashboard) |
+
+### Reference
+
+| Topic | Page |
+|---|---|
+| Every command, every flag | [Command Reference](https://github.com/subversivesoftwareorg/conscience/wiki/Command-Reference) |
+| conscience.yaml, GitHub auth, thresholds | [Configuration](https://github.com/subversivesoftwareorg/conscience/wiki/Configuration) |
+| The ethical framework | [The Seven Principles](https://github.com/subversivesoftwareorg/conscience/wiki/The-Seven-Principles) |
+| Security signal detection | [Security Signals](https://github.com/subversivesoftwareorg/conscience/wiki/Security-Signals) |
 
 ## Contributing
 
 Conscience is built with Rust. To get started:
 
-```
-git clone <repo-url>
+```bash
+git clone https://github.com/subversivesoftwareorg/conscience
 cd conscience
 cargo build
+cargo test
 cargo run -- examine --project .
 ```
 
 Areas where contributions are especially welcome:
 
-- **AI tool parsers** — Copilot, Cursor, Codex, Windsurf log ingestion
-- **Signal detectors** — New patterns worth surfacing
-- **Report formats** — Markdown export, PDF generation for retrospectives
-- **Integration** — Claude Code skill, CI/CD integration
+- **AI tool parsers** — Copilot, Cursor, Codex, Windsurf log ingestion (implement the `AiToolParser` trait)
+- **Signal detectors** — new patterns worth surfacing
+- **Report formats** — Markdown/PDF export for retrospectives
+- **Integration** — Claude Code skill, additional CI/CD platforms
 
 ## License
 
