@@ -39,7 +39,7 @@ jobs:
 
       - name: Clone tap repo
         run: |
-          git clone https://x-access-token:${{ secrets.TAP_GITHUB_TOKEN }}@github.com/subversivesoftwareorg/homebrew-tap.git tap
+          git clone https://x-access-token:${{ secrets.SS_HOMEBREW_PUBLISH }}@github.com/subversivesoftwareorg/homebrew-tap.git tap
         env:
           GIT_TERMINAL_PROMPT: "0"
 
@@ -106,4 +106,4 @@ jobs:
             --head "$BRANCH" \
             --base main
         env:
-          GH_TOKEN: ${{ secrets.TAP_GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SS_HOMEBREW_PUBLISH }}
