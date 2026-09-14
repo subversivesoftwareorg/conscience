@@ -179,6 +179,9 @@ conscience retro [--dir <path>] [--days 30] [--json]
 # Cross-project analysis across all Claude Code projects
 conscience examine-all [--days 30] [--json]
 
+# Weekly digest: Markdown summary of signal trends across all projects
+conscience digest [--days 7] [--output <path>] [--json]
+
 # Push results to a dashboard server
 conscience push --repo <owner/repo> --project <path> [--endpoint <url>]
 

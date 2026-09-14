@@ -104,6 +104,18 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Generate a weekly digest summarizing ethical signal trends across repos
+    Digest {
+        /// Number of days to look back
+        #[arg(long, default_value = "7")]
+        days: u32,
+        /// Write digest to a file instead of stdout
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Output as JSON instead of Markdown
+        #[arg(long)]
+        json: bool,
+    },
     /// Analyze attention patterns across projects
     Attention {
         /// Number of days to look back
@@ -239,6 +251,7 @@ async fn main() {
             project,
             json,
         } => run_authorship(&repo, days, project.as_deref(), json).await,
+        Commands::Digest { days, output, json } => run_digest(days, output.as_deref(), json).await,
         Commands::Attention { days, project, json, html } => {
             run_attention(days, project.as_deref(), json, html.as_deref()).await
         }
@@ -609,6 +622,166 @@ async fn run_push(
     );
 
     dashboard::push::push_analysis(&endpoint, &payload, api_key.as_deref()).await?;
+
+    Ok(())
+}
+
+async fn run_digest(
+    days: u32,
+    output: Option<&std::path::Path>,
+    json_output: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let analysis = ethics::multi::analyze_all_projects(days).await?;
+
+    if analysis.total_projects == 0 {
+        eprintln!("No projects found.");
+        std::process::exit(1);
+    }
+
+    if json_output {
+        let json = serde_json::to_string_pretty(&analysis)?;
+        if let Some(path) = output {
+            std::fs::write(path, &json)?;
+            eprintln!("Digest written to {}", path.display());
+        } else {
+            println!("{}", json);
+        }
+        return Ok(());
+    }
+
+    let mut md = String::new();
+
+    use std::fmt::Write;
+    let _ = writeln!(md, "# Conscience Weekly Digest");
+    let _ = writeln!(md);
+    let _ = writeln!(
+        md,
+        "**Period:** {} days ending {} | **Projects:** {} | **Sessions:** {} | **Output tokens:** {}K",
+        days,
+        chrono::Utc::now().format("%Y-%m-%d"),
+        analysis.total_projects,
+        analysis.total_sessions,
+        analysis.total_output_tokens / 1_000,
+    );
+
+    // Rough energy from total output tokens using large-tier default (1.5 Wh/1K output)
+    let rough_energy_wh = analysis.total_output_tokens as f64 * 1.5 / 1000.0;
+    let _ = writeln!(md, "**Estimated energy:** ~{:.0} Wh (~{:.1} hours of laptop use)", rough_energy_wh, rough_energy_wh / 60.0);
+    let _ = writeln!(md);
+
+    // Top Concerns
+    let mut concerns: Vec<(&str, &ethics::models::Signal)> = Vec::new();
+    for project in &analysis.projects {
+        let name = project.project_name.as_deref().unwrap_or("unknown");
+        for signal in &project.analysis.signals {
+            if signal.severity >= ethics::models::Severity::Concern {
+                concerns.push((name, signal));
+            }
+        }
+    }
+    for signal in &analysis.outlier_signals {
+        if signal.severity >= ethics::models::Severity::Concern {
+            concerns.push(("(cross-project)", signal));
+        }
+    }
+    concerns.sort_by_key(|(_, s)| std::cmp::Reverse(s.severity));
+
+    if concerns.is_empty() {
+        let _ = writeln!(md, "## No Concerns");
+        let _ = writeln!(md, "All projects are in healthy territory this period.");
+    } else {
+        let _ = writeln!(md, "## Top Concerns ({} signals)", concerns.len());
+        let _ = writeln!(md);
+        for (project, signal) in concerns.iter().take(10) {
+            let _ = writeln!(
+                md,
+                "- **{}** {} — {} [{}]",
+                signal.severity,
+                project,
+                signal.title,
+                signal.principle.name()
+            );
+            let _ = writeln!(md, "  {}", signal.detail);
+        }
+        if concerns.len() > 10 {
+            let _ = writeln!(md, "- ...and {} more", concerns.len() - 10);
+        }
+    }
+    let _ = writeln!(md);
+
+    // Healthy Patterns
+    let healthy: Vec<(&str, &ethics::models::Signal)> = analysis
+        .projects
+        .iter()
+        .flat_map(|p| {
+            let name = p.project_name.as_deref().unwrap_or("unknown");
+            p.analysis
+                .signals
+                .iter()
+                .filter(|s| s.severity == ethics::models::Severity::Healthy)
+                .map(move |s| (name, s))
+        })
+        .collect();
+
+    if !healthy.is_empty() {
+        let _ = writeln!(md, "## Healthy Patterns");
+        let _ = writeln!(md);
+        for (project, signal) in healthy.iter().take(5) {
+            let _ = writeln!(md, "- **{}** — {} [{}]", project, signal.title, signal.principle.name());
+        }
+        if healthy.len() > 5 {
+            let _ = writeln!(md, "- ...and {} more across projects", healthy.len() - 5);
+        }
+        let _ = writeln!(md);
+    }
+
+    // Per-project one-liners
+    let _ = writeln!(md, "## Project Summary");
+    let _ = writeln!(md);
+    let _ = writeln!(md, "| Project | Sessions | Tokens | Signals | Worst |");
+    let _ = writeln!(md, "|---------|----------|--------|---------|-------|");
+    for p in &analysis.projects {
+        let name = p.project_name.as_deref().unwrap_or("unknown");
+        let worst = p
+            .analysis
+            .signals
+            .iter()
+            .map(|s| s.severity)
+            .max()
+            .map(|s| format!("{}", s))
+            .unwrap_or_else(|| "—".to_string());
+        let _ = writeln!(
+            md,
+            "| {} | {} | {}K | {} | {} |",
+            name,
+            p.session_count,
+            p.total_output_tokens / 1_000,
+            p.analysis.signals.len(),
+            worst,
+        );
+    }
+    let _ = writeln!(md);
+
+    // Reflection
+    let _ = writeln!(md, "## Reflection");
+    let _ = writeln!(md);
+    let _ = writeln!(
+        md,
+        "Looking at the past {} days across {} projects: is the AI compute ({} sessions, \
+        ~{:.0} Wh estimated energy) proportionate to the value delivered? \
+        Are the concerns above worth investigating, or are they noise?",
+        days,
+        analysis.total_projects,
+        analysis.total_sessions,
+        rough_energy_wh,
+    );
+
+    if let Some(path) = output {
+        std::fs::write(path, &md)?;
+        eprintln!("Digest written to {}", path.display());
+    } else {
+        print!("{}", md);
+    }
 
     Ok(())
 }
