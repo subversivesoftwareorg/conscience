@@ -19,6 +19,11 @@ jobs:
           curl -sL "https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/checksums.txt" -o checksums.txt
           cat checksums.txt
 
+      - name: Get source tarball SHA
+        run: |
+          curl -sL "https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.event.release.tag_name }}.tar.gz" | sha256sum | awk '{print $1}' > source_sha.txt
+          cat source_sha.txt
+
       - name: Parse checksums and version
         id: parse
         run: |
@@ -30,6 +35,7 @@ jobs:
           echo "sha_macos_arm64=$(grep 'conscience-macos-arm64' checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "sha_linux_amd64=$(grep 'conscience-linux-amd64' checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "sha_linux_arm64=$(grep 'conscience-linux-arm64' checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          echo "sha_source=$(cat source_sha.txt)" >> "$GITHUB_OUTPUT"
 
       - name: Clone tap repo
         run: |
@@ -39,40 +45,37 @@ jobs:
 
       - name: Update formula
         run: |
-          cat > tap/Formula/conscience.rb << 'FORMULA_EOF'
+          VERSION="${{ steps.parse.outputs.version }}"
+          TAG="${{ steps.parse.outputs.tag }}"
+          SHA_MAC="${{ steps.parse.outputs.sha_macos_arm64 }}"
+          SHA_LIN_AMD="${{ steps.parse.outputs.sha_linux_amd64 }}"
+          SHA_LIN_ARM="${{ steps.parse.outputs.sha_linux_arm64 }}"
+          SHA_SRC="${{ steps.parse.outputs.sha_source }}"
+
+          cat > tap/Formula/conscience.rb << EOF
           class Conscience < Formula
-            desc "Evaluate the impact of AI-assisted work — measuring velocity, quality, and ethical implications"
+            desc "Evaluate the impact of AI-assisted work"
             homepage "https://github.com/subversivesoftwareorg/conscience"
-            version "${{ steps.parse.outputs.version }}"
+            version "${VERSION}"
             license "MIT"
 
-            on_macos do
-              on_arm do
-                url "https://github.com/subversivesoftwareorg/conscience/releases/download/${{ steps.parse.outputs.tag }}/conscience-macos-arm64"
-                sha256 "${{ steps.parse.outputs.sha_macos_arm64 }}"
-              end
-
-              on_intel do
-                url "https://github.com/subversivesoftwareorg/conscience/archive/refs/tags/${{ steps.parse.outputs.tag }}.tar.gz"
-                sha256 :no_check
-                depends_on "rust" => :build
-              end
-            end
-
-            on_linux do
-              on_arm do
-                url "https://github.com/subversivesoftwareorg/conscience/releases/download/${{ steps.parse.outputs.tag }}/conscience-linux-arm64"
-                sha256 "${{ steps.parse.outputs.sha_linux_arm64 }}"
-              end
-
-              on_intel do
-                url "https://github.com/subversivesoftwareorg/conscience/releases/download/${{ steps.parse.outputs.tag }}/conscience-linux-amd64"
-                sha256 "${{ steps.parse.outputs.sha_linux_amd64 }}"
-              end
+            if OS.mac? && Hardware::CPU.arm?
+              url "https://github.com/subversivesoftwareorg/conscience/releases/download/${TAG}/conscience-macos-arm64"
+              sha256 "${SHA_MAC}"
+            elsif OS.linux? && Hardware::CPU.arm?
+              url "https://github.com/subversivesoftwareorg/conscience/releases/download/${TAG}/conscience-linux-arm64"
+              sha256 "${SHA_LIN_ARM}"
+            elsif OS.linux? && Hardware::CPU.intel?
+              url "https://github.com/subversivesoftwareorg/conscience/releases/download/${TAG}/conscience-linux-amd64"
+              sha256 "${SHA_LIN_AMD}"
+            else
+              url "https://github.com/subversivesoftwareorg/conscience/archive/refs/tags/${TAG}.tar.gz"
+              sha256 "${SHA_SRC}"
+              depends_on "rust" => :build
             end
 
             def install
-              if build.head? || File.exist?("Cargo.toml")
+              if File.exist?("Cargo.toml")
                 system "cargo", "install", *std_cargo_args
               else
                 bin.install Dir["conscience*"].first => "conscience"
@@ -80,12 +83,11 @@ jobs:
             end
 
             test do
-              assert_match "conscience", shell_output("#{bin}/conscience --version")
+              assert_match version.to_s, shell_output("#{bin}/conscience --version")
             end
           end
-          FORMULA_EOF
+          EOF
 
-          # Fix indentation (heredoc adds leading spaces)
           sed -i 's/^          //' tap/Formula/conscience.rb
 
       - name: Create PR

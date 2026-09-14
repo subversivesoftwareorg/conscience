@@ -17,7 +17,7 @@ This is a discernment tool, not a surveillance tool. It is designed for teams to
 ## Install
 
 ```bash
-# macOS (recommended)
+# macOS / Linux via Homebrew
 brew tap subversivesoftwareorg/tap
 brew install conscience
 
