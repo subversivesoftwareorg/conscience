@@ -90,20 +90,11 @@ jobs:
 
           sed -i 's/^          //' tap/Formula/conscience.rb
 
-      - name: Create PR
+      - name: Push to tap
         working-directory: tap
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          BRANCH="update-conscience-${{ steps.parse.outputs.version }}"
-          git checkout -b "$BRANCH"
           git add Formula/conscience.rb
           git commit -m "Update conscience to ${{ steps.parse.outputs.version }}"
-          git push origin "$BRANCH"
-          gh pr create \
-            --title "Update conscience to ${{ steps.parse.outputs.version }}" \
-            --body "Automated update from [conscience release ${{ steps.parse.outputs.tag }}](https://github.com/${{ github.repository }}/releases/tag/${{ steps.parse.outputs.tag }})." \
-            --head "$BRANCH" \
-            --base main
-        env:
-          GH_TOKEN: ${{ secrets.SS_HOMEBREW_PUBLISH }}
+          git push origin main
