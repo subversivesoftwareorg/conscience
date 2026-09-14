@@ -34,6 +34,8 @@ fn session(id: &str, project: &str, prompts: &[(i64, Option<i64>)]) -> AiSession
                 uuid: Some(format!("{}-{}", id, m)),
             })
             .collect(),
+        agent_dispatches: Vec::new(),
+        skill_invocations: Vec::new(),
     }
 }
 

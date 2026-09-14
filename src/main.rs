@@ -116,6 +116,18 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// Retrospective on token consumption — where did the budget go?
+    RetroTokens {
+        /// Hours to look back
+        #[arg(long, default_value = "4")]
+        hours: u32,
+        /// Filter to a specific project
+        #[arg(long)]
+        project: Option<PathBuf>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Analyze attention patterns across projects
     Attention {
         /// Number of days to look back
@@ -252,6 +264,7 @@ async fn main() {
             json,
         } => run_authorship(&repo, days, project.as_deref(), json).await,
         Commands::Digest { days, output, json } => run_digest(days, output.as_deref(), json).await,
+        Commands::RetroTokens { hours, project, json } => run_retro_tokens(hours, project.as_deref(), json),
         Commands::Attention { days, project, json, html } => {
             run_attention(days, project.as_deref(), json, html.as_deref()).await
         }
@@ -622,6 +635,165 @@ async fn run_push(
     );
 
     dashboard::push::push_analysis(&endpoint, &payload, api_key.as_deref()).await?;
+
+    Ok(())
+}
+
+fn run_retro_tokens(
+    hours: u32,
+    project: Option<&std::path::Path>,
+    json_output: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let summary = ingest::ai::ingest_claude_code(project)?;
+    if summary.session_count == 0 {
+        eprintln!("No Claude Code sessions found.");
+        std::process::exit(1);
+    }
+
+    let cutoff = chrono::Utc::now() - chrono::Duration::hours(hours as i64);
+    let recent: Vec<_> = summary
+        .sessions
+        .into_iter()
+        .filter(|s| {
+            s.ended_at.map_or(false, |t| t >= cutoff)
+                || s.started_at.map_or(false, |t| t >= cutoff)
+        })
+        .collect();
+
+    if recent.is_empty() {
+        eprintln!("No sessions active in the last {} hours.", hours);
+        std::process::exit(1);
+    }
+
+    eprintln!("{} session(s) active in the last {} hours", recent.len(), hours);
+
+    let retro = analysis::session_retro::analyze_token_retro(&recent);
+
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&retro)?);
+        return Ok(());
+    }
+
+    println!();
+    println!(
+        "  Conscience \u{2014} Token Retrospective (last {} hours)",
+        hours
+    );
+    println!(
+        "  {} sessions | {}K total tokens | ~{:.0} Wh estimated energy",
+        retro.session_count,
+        retro.total_tokens / 1_000,
+        retro.total_energy_wh,
+    );
+    println!(
+        "  Cache efficiency: {:.0}%",
+        retro.cache_efficiency,
+    );
+    if retro.total_agent_dispatches > 0 || retro.total_skill_invocations > 0 {
+        println!(
+            "  Orchestration: {} agent dispatches, {} skill invocations",
+            retro.total_agent_dispatches, retro.total_skill_invocations,
+        );
+    }
+    println!();
+
+    // Per-session table
+    println!("  Per-Session Breakdown (ranked by token consumption)");
+    let mut table = comfy_table::Table::new();
+    table
+        .load_preset(comfy_table::presets::UTF8_FULL)
+        .apply_modifier(comfy_table::modifiers::UTF8_ROUND_CORNERS)
+        .set_header(vec![
+            comfy_table::Cell::new("Session").fg(comfy_table::Color::Cyan),
+            comfy_table::Cell::new("Project").fg(comfy_table::Color::Cyan),
+            comfy_table::Cell::new("Model").fg(comfy_table::Color::Cyan),
+            comfy_table::Cell::new("Tokens").fg(comfy_table::Color::Cyan),
+            comfy_table::Cell::new("In%").fg(comfy_table::Color::Cyan),
+            comfy_table::Cell::new("Out%").fg(comfy_table::Color::Cyan),
+            comfy_table::Cell::new("Cache%").fg(comfy_table::Color::Cyan),
+            comfy_table::Cell::new("Agents").fg(comfy_table::Color::Cyan),
+            comfy_table::Cell::new("Skills").fg(comfy_table::Color::Cyan),
+        ]);
+
+    for p in &retro.per_session {
+        let sid = p.session_id.chars().take(8).collect::<String>();
+        let tokens = if p.total_tokens >= 1_000_000 {
+            format!("{:.1}M", p.total_tokens as f64 / 1_000_000.0)
+        } else {
+            format!("{}K", p.total_tokens / 1_000)
+        };
+        table.add_row(vec![
+            comfy_table::Cell::new(&sid),
+            comfy_table::Cell::new(&p.project),
+            comfy_table::Cell::new(p.model.chars().take(20).collect::<String>()),
+            comfy_table::Cell::new(&tokens),
+            comfy_table::Cell::new(format!("{:.0}", p.input_pct)),
+            comfy_table::Cell::new(format!("{:.0}", p.output_pct)),
+            comfy_table::Cell::new(format!("{:.0}", p.cache_efficiency)),
+            comfy_table::Cell::new(p.agent_count.to_string()),
+            comfy_table::Cell::new(p.skill_count.to_string()),
+        ]);
+    }
+    println!("{}", table);
+
+    // Agent details if any
+    let sessions_with_agents: Vec<_> = retro.per_session.iter().filter(|p| p.agent_count > 0).collect();
+    if !sessions_with_agents.is_empty() {
+        println!();
+        println!("  Agent Dispatches");
+        for p in sessions_with_agents {
+            println!(
+                "    {} ({}) \u{2014} {} agents:",
+                p.session_id.chars().take(8).collect::<String>(),
+                p.project,
+                p.agent_count,
+            );
+            for agent in &p.agents {
+                println!("      \u{2022} {}", agent);
+            }
+        }
+    }
+
+    // Skill details if any
+    let sessions_with_skills: Vec<_> = retro.per_session.iter().filter(|p| p.skill_count > 0).collect();
+    if !sessions_with_skills.is_empty() {
+        println!();
+        println!("  Skill Invocations");
+        for p in sessions_with_skills {
+            let unique_skills: Vec<_> = {
+                let mut s = p.skills.clone();
+                s.sort();
+                s.dedup();
+                s
+            };
+            println!(
+                "    {} ({}) \u{2014} {}",
+                p.session_id.chars().take(8).collect::<String>(),
+                p.project,
+                unique_skills.join(", "),
+            );
+        }
+    }
+
+    // Top tools
+    if !retro.tool_summary.is_empty() {
+        println!();
+        println!("  Top Tools (across all sessions)");
+        for (tool, count) in retro.tool_summary.iter().take(8) {
+            println!("    {:>5}x  {}", count, tool);
+        }
+    }
+
+    // Diagnoses
+    if !retro.diagnoses.is_empty() {
+        println!();
+        println!("  Diagnosis");
+        for d in &retro.diagnoses {
+            println!("    \u{2022} {}", d);
+        }
+    }
+
+    println!();
 
     Ok(())
 }

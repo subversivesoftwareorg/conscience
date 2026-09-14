@@ -91,6 +91,21 @@ pub struct AiSession {
     pub git_branch: Option<String>,
     #[serde(default)]
     pub interactions: Vec<Interaction>,
+    #[serde(default)]
+    pub agent_dispatches: Vec<AgentDispatch>,
+    #[serde(default)]
+    pub skill_invocations: Vec<SkillInvocation>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentDispatch {
+    pub description: String,
+    pub agent_type: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SkillInvocation {
+    pub skill: String,
 }
 
 /// An action taken by an autonomous AI agent that affects the outside world.

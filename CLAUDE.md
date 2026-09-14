@@ -185,6 +185,9 @@ conscience digest [--days 7] [--output <path>] [--json]
 # Push results to a dashboard server
 conscience push --repo <owner/repo> --project <path> [--endpoint <url>]
 
+# Token retrospective: where did the budget go across recent sessions?
+conscience retro-tokens [--hours 4] [--project <path>] [--json]
+
 # Attention & flow analysis across projects
 conscience attention [--days 7] [--project <path>] [--json] [--html <output.html>]
 ```

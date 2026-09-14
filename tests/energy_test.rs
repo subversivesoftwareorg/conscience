@@ -21,6 +21,8 @@ fn session_with(model: &str, input: u64, output: u64, cache_create: u64, cache_r
         agent_actions: vec![],
         git_branch: None,
         interactions: vec![],
+        agent_dispatches: vec![],
+        skill_invocations: vec![],
     }
 }
 

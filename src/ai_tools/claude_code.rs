@@ -118,6 +118,8 @@ impl ClaudeCodeParser {
         let mut ended_at: Option<DateTime<Utc>> = None;
         let mut interactions: Vec<Interaction> = Vec::new();
         let mut last_event_ts: Option<DateTime<Utc>> = None;
+        let mut agent_dispatches: Vec<AgentDispatch> = Vec::new();
+        let mut skill_invocations: Vec<SkillInvocation> = Vec::new();
 
         for line in reader.lines() {
             let line = match line {
@@ -236,6 +238,21 @@ impl ClaudeCodeParser {
                                 }
 
                                 extract_file_touch(&tool_name, block, &mut files_touched, &mut files_seen);
+
+                                if tool_name == "Agent" {
+                                    let input = block.get("input").unwrap_or(&Value::Null);
+                                    agent_dispatches.push(AgentDispatch {
+                                        description: input.get("description").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                        agent_type: input.get("subagent_type").and_then(|v| v.as_str()).map(String::from),
+                                    });
+                                }
+
+                                if tool_name == "Skill" {
+                                    let input = block.get("input").unwrap_or(&Value::Null);
+                                    skill_invocations.push(SkillInvocation {
+                                        skill: input.get("skill").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                                    });
+                                }
                             }
                         }
                     }
@@ -276,6 +293,8 @@ impl ClaudeCodeParser {
             agent_actions: Vec::new(),
             git_branch,
             interactions,
+            agent_dispatches,
+            skill_invocations,
         })
     }
 }
