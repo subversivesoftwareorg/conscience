@@ -139,12 +139,22 @@ fn build_who_benefits_reflection(
 
 fn build_transparency_reflection(ai: Option<&AiUsageSummary>) -> ReflectionQuestion {
     let context = if let Some(ai_data) = ai {
-        format!(
-            "{} AI sessions, {} file write operations, {} file edits.",
+        let agent_count: usize = ai_data.sessions.iter().map(|s| s.agent_dispatches.len()).sum();
+        let skill_count: usize = ai_data.sessions.iter().map(|s| s.skill_invocations.len()).sum();
+        let mut ctx = format!(
+            "{} AI sessions, {} file write operations, {} file edits",
             ai_data.session_count,
             ai_data.tools_used.get("Write").unwrap_or(&0),
             ai_data.tools_used.get("Edit").unwrap_or(&0),
-        )
+        );
+        if agent_count > 0 || skill_count > 0 {
+            ctx.push_str(&format!(
+                ", {} agent dispatches, {} skill invocations",
+                agent_count, skill_count
+            ));
+        }
+        ctx.push('.');
+        ctx
     } else {
         "No AI usage data available.".to_string()
     };
@@ -228,13 +238,21 @@ fn build_babel_or_jerusalem_reflection(
     }
 
     if let Some(ai_data) = ai {
-        context_parts.push(format!(
+        let agent_count: usize = ai_data.sessions.iter().map(|s| s.agent_dispatches.len()).sum();
+        let mut tool_desc = format!(
             "AI used for {} tool operations ({} Bash, {} Write, {} Edit)",
             ai_data.tools_used.values().sum::<u64>(),
             ai_data.tools_used.get("Bash").unwrap_or(&0),
             ai_data.tools_used.get("Write").unwrap_or(&0),
             ai_data.tools_used.get("Edit").unwrap_or(&0),
-        ));
+        );
+        if agent_count > 0 {
+            tool_desc.push_str(&format!(
+                ", {} agent dispatches (orchestration from a single seat)",
+                agent_count
+            ));
+        }
+        context_parts.push(tool_desc);
     }
 
     ReflectionQuestion {

@@ -456,6 +456,14 @@ fn detect_token_consumption(summary: &AiUsageSummary, signals: &mut Vec<Signal>)
     }
 }
 
+fn count_agent_dispatches(summary: &AiUsageSummary) -> u64 {
+    summary.sessions.iter().map(|s| s.agent_dispatches.len() as u64).sum()
+}
+
+fn count_skill_invocations(summary: &AiUsageSummary) -> u64 {
+    summary.sessions.iter().map(|s| s.skill_invocations.len() as u64).sum()
+}
+
 fn detect_tool_patterns(summary: &AiUsageSummary, signals: &mut Vec<Signal>) {
     let bash_count = summary.tools_used.get("Bash").cloned().unwrap_or(0);
     let total_tools: u64 = summary.tools_used.values().sum();
@@ -476,6 +484,40 @@ fn detect_tool_patterns(summary: &AiUsageSummary, signals: &mut Vec<Signal>) {
                 summary.tools_used.get("Read").unwrap_or(&0),
                 summary.tools_used.get("Edit").unwrap_or(&0),
                 summary.tools_used.get("Write").unwrap_or(&0),
+            ),
+        });
+    }
+
+    let agent_count = count_agent_dispatches(summary);
+    if agent_count > 10 {
+        let skill_count = count_skill_invocations(summary);
+        let heaviest = summary.sessions.iter()
+            .max_by_key(|s| s.agent_dispatches.len())
+            .map(|s| (
+                s.session_id.chars().take(8).collect::<String>(),
+                s.agent_dispatches.len(),
+            ));
+        let detail = if let Some((sid, count)) = heaviest {
+            format!(
+                "{} agent dispatches across {} sessions (heaviest: session {} with {}). \
+                Each dispatch compounds context growth. {} skill invocations driving the orchestration.",
+                agent_count,
+                summary.sessions.iter().filter(|s| !s.agent_dispatches.is_empty()).count(),
+                sid,
+                count,
+                skill_count,
+            )
+        } else {
+            format!("{} agent dispatches detected.", agent_count)
+        };
+        signals.push(Signal {
+            principle: Principle::HumanAgency,
+            severity: if agent_count > 20 { Severity::Concern } else { Severity::Info },
+            title: "Heavy agent orchestration".to_string(),
+            detail,
+            evidence: format!(
+                "Agent: {}, Skill: {}, total tools: {}",
+                agent_count, skill_count, total_tools
             ),
         });
     }
@@ -520,16 +562,29 @@ fn detect_tokenmaxxing(
         let tokens_per_file = session.tokens.output / files_count;
 
         if tokens_per_file > thresholds.tokens_per_file_warn && session.tokens.output > 10_000 {
+            let agent_note = if !session.agent_dispatches.is_empty() {
+                format!(
+                    " (note: {} agent dispatches may explain the high token count — orchestration overhead, not waste)",
+                    session.agent_dispatches.len()
+                )
+            } else {
+                String::new()
+            };
             signals.push(Signal {
                 principle: Principle::Security,
-                severity: Severity::Concern,
+                severity: if session.agent_dispatches.is_empty() {
+                    Severity::Concern
+                } else {
+                    Severity::Info
+                },
                 title: "High token-to-file ratio".to_string(),
                 detail: format!(
                     "Session {} used {}K output tokens but only touched {} file(s). \
-                    Lots of tokens with little tangible output may indicate waste or misuse.",
+                    Lots of tokens with little tangible output may indicate waste or misuse.{}",
                     session.session_id.chars().take(8).collect::<String>(),
                     session.tokens.output / 1_000,
-                    session.files_touched.len()
+                    session.files_touched.len(),
+                    agent_note,
                 ),
                 evidence: format!(
                     "{}K tokens / {} files = {}K tokens/file (threshold: {}K)",

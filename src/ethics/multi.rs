@@ -79,6 +79,13 @@ pub async fn analyze_all_projects(days: u32) -> Result<MultiProjectAnalysis> {
         total_sessions += ai_summary.session_count;
         total_output_tokens += ai_summary.total_tokens.output;
 
+        let agent_dispatches: u64 = ai_summary.sessions.iter()
+            .map(|s| s.agent_dispatches.len() as u64)
+            .sum();
+        let skill_invocations: u64 = ai_summary.sessions.iter()
+            .map(|s| s.skill_invocations.len() as u64)
+            .sum();
+
         projects.push(ProjectAnalysis {
             project_path: project_path.clone(),
             project_name: Some(project_name),
@@ -86,6 +93,8 @@ pub async fn analyze_all_projects(days: u32) -> Result<MultiProjectAnalysis> {
             session_count: ai_summary.session_count,
             total_output_tokens: ai_summary.total_tokens.output,
             ai_human_ratio,
+            agent_dispatches,
+            skill_invocations,
         });
     }
 
@@ -207,6 +216,31 @@ fn detect_cross_project_outliers(projects: &[ProjectAnalysis]) -> Vec<Signal> {
                 evidence: format!("Project: {}", project.project_path),
             });
         }
+    }
+
+    // Heaviest orchestration
+    if let Some(heaviest) = projects
+        .iter()
+        .filter(|p| p.agent_dispatches > 10)
+        .max_by_key(|p| p.agent_dispatches)
+    {
+        signals.push(Signal {
+            principle: Principle::HumanAgency,
+            severity: Severity::Info,
+            title: "Highest agent orchestration".to_string(),
+            detail: format!(
+                "\"{}\" dispatched {} agents and {} skills — the heaviest orchestration across projects. \
+                Heavy orchestration concentrates work through a single seat and compounds token costs.",
+                heaviest.project_name.as_deref().unwrap_or("unknown"),
+                heaviest.agent_dispatches,
+                heaviest.skill_invocations,
+            ),
+            evidence: format!(
+                "{} sessions, {}K output tokens",
+                heaviest.session_count,
+                heaviest.total_output_tokens / 1_000,
+            ),
+        });
     }
 
     signals

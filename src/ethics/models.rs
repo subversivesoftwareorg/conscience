@@ -73,6 +73,10 @@ pub struct ProjectAnalysis {
     pub session_count: u64,
     pub total_output_tokens: u64,
     pub ai_human_ratio: f64,
+    #[serde(default)]
+    pub agent_dispatches: u64,
+    #[serde(default)]
+    pub skill_invocations: u64,
 }
 
 /// Aggregated analysis across multiple projects
