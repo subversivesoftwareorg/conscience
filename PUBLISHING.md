@@ -98,10 +98,27 @@ git tag v0.1.0
 git push origin v0.1.0
 ```
 
-This triggers `.github/workflows/release.yml` which:
-1. Builds binaries for Linux (amd64, arm64) and macOS (amd64, arm64)
-2. Creates a GitHub Release with all binaries and SHA256 checksums
-3. Auto-generates release notes from commits since the last tag
+This triggers `.github/workflows/release.yml` which runs four jobs:
+1. `build` — binaries for Linux (amd64, arm64) and macOS (arm64). macOS Intel
+   was dropped because `macos-13` runners never picked up; Intel users use
+   `cargo install conscience`.
+2. `release` — creates a GitHub Release with the binaries, SHA256 checksums,
+   and auto-generated notes from commits since the last tag
+3. `publish-crate` — `cargo publish` from a clean checkout using the
+   `CARGO_REGISTRY_TOKEN` secret. It must not share a working tree with the
+   downloaded binaries: in v0.5.0 they were packed into the crate and pushed
+   it past the 10MB crates.io limit.
+4. `homebrew` — calls `update-homebrew.yml` as a reusable workflow to push a
+   new formula to `subversivesoftwareorg/homebrew-tap` using the
+   `SS_HOMEBREW_PUBLISH` secret. It is called directly because the
+   `release: published` event never fires for releases created with the
+   default `GITHUB_TOKEN`.
+
+If the Homebrew step needs re-running on its own, dispatch it manually:
+
+```bash
+gh workflow run update-homebrew.yml -f tag=v0.5.1
+```
 
 ## Version Bumping
 
@@ -109,4 +126,5 @@ This triggers `.github/workflows/release.yml` which:
 2. Commit: `git commit -am "Bump version to 0.2.0"`
 3. Tag: `git tag v0.2.0`
 4. Push: `git push origin main v0.2.0`
-5. Publish: `cargo publish`
+
+Everything else (binaries, GitHub Release, crates.io, Homebrew) is automatic.

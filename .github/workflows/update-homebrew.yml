@@ -1,6 +1,21 @@
 name: Update Homebrew Formula
 
 on:
+  # Primary path: called from release.yml after the GitHub Release exists.
+  # (The `release: published` event does not fire for releases created with
+  # the default GITHUB_TOKEN, so it is kept only for manually created releases.)
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag, e.g. v0.5.1"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, e.g. v0.5.1"
+        required: true
+        type: string
   release:
     types: [published]
 
@@ -16,21 +31,21 @@ jobs:
 
       - name: Download checksums
         run: |
-          curl -sL "https://github.com/${{ github.repository }}/releases/download/${{ github.event.release.tag_name }}/checksums.txt" -o checksums.txt
+          curl -sL "https://github.com/${{ github.repository }}/releases/download/${{ inputs.tag || github.event.release.tag_name }}/checksums.txt" -o checksums.txt
           cat checksums.txt
 
       - name: Get source tarball SHA
         run: |
-          curl -sL "https://github.com/${{ github.repository }}/archive/refs/tags/${{ github.event.release.tag_name }}.tar.gz" | sha256sum | awk '{print $1}' > source_sha.txt
+          curl -sL "https://github.com/${{ github.repository }}/archive/refs/tags/${{ inputs.tag || github.event.release.tag_name }}.tar.gz" | sha256sum | awk '{print $1}' > source_sha.txt
           cat source_sha.txt
 
       - name: Parse checksums and version
         id: parse
         run: |
-          VERSION="${{ github.event.release.tag_name }}"
+          VERSION="${{ inputs.tag || github.event.release.tag_name }}"
           VERSION="${VERSION#v}"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          echo "tag=${{ inputs.tag || github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
 
           echo "sha_macos_arm64=$(grep 'conscience-macos-arm64' checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"
           echo "sha_linux_amd64=$(grep 'conscience-linux-amd64' checksums.txt | awk '{print $1}')" >> "$GITHUB_OUTPUT"

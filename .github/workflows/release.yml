@@ -86,10 +86,27 @@ jobs:
             --generate-notes \
             release/*
 
+  # Runs from a clean checkout so downloaded binaries never end up in the
+  # crate (they pushed the package past crates.io's 10MB limit in v0.5.0).
+  publish-crate:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Publish to crates.io
-        run: cargo publish --allow-dirty
+        run: cargo publish
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  # Called directly rather than via the `release: published` event, which
+  # never fires for releases created with the default GITHUB_TOKEN.
+  homebrew:
+    needs: release
+    uses: ./.github/workflows/update-homebrew.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit
