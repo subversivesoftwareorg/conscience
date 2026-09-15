@@ -99,7 +99,8 @@ Google Gemini at 0.24 Wh, ChatGPT at ~0.34 Wh per median query.
 ## Labor & Developer Impact
 
 ### Stanford HAI 2026 AI Index Report (April 2026)
-**Source:** https://aiindex.stanford.edu/report/ `[manual download]`
+**File:** `labor/Stanford_HAI_2026_AI_Index.pdf` `[PDF]`
+**Source:** https://aiindex.stanford.edu/report/
 
 Using ADP payroll data, documents ~20% decline in employment for software developers aged 22-25 since 2024. Junior employment drops 9-10% within six quarters of AI tool adoption. Transforms MH's de-skilling warning from philosophy to measured fact.
 
@@ -168,7 +169,8 @@ Collective Benefit, Authority to Control, Responsibility, Ethics. Challenges the
 **Gap it fills:** Collective benefit governance; extends MH's common good with community consent mechanisms.
 
 ### "AI Ethics Through a Decolonial Lens" (February 2026)
-**Source:** https://pmc.ncbi.nlm.nih.gov/articles/PMC13385455/ `[manual download]`
+**File:** `decolonial/Decolonial_AI_Ethics_2026.pdf` `[PDF]`
+**Source:** https://pmc.ncbi.nlm.nih.gov/articles/PMC13385455/
 **Published in:** AI & Society (Springer)
 
 Three reorientations: (1) AI as means to redress power asymmetries, not just "do no harm"; (2) AI grounded in local data sovereignty; (3) AI as relationally entangled with humans and Earth.
@@ -188,15 +190,17 @@ Ubuntu-informed relational ethics. Communal rather than individual conceptions o
 ## Commons & Licensing
 
 ### Open Future — Public AI & Commons Framework (2025-2026)
-**Source:** https://openfuture.eu/publication/white-paper-on-public-ai/ `[manual download]`
+**File:** `commons/Open_Future_Public_AI_WhitePaper_2025.pdf` `[PDF]`
+**Source:** https://openfuture.eu/publication/white-paper-on-public-ai/
 **Author:** Open Future (European think tank), commissioned by Bertelsmann Stiftung
 
 "Gradient of publicness" for AI infrastructure. Identifies "data winter" — declining willingness to share data as proprietary actors secure exclusive datasets.
 
 **Gap it fills:** Reciprocity dimension — is the team contributing back to the open-source commons their AI tools were trained on?
 
-### Creative Commons "CC Signals" Framework (September 2026)
-**Source:** https://creativecommons.org/2026/09/03/guidance-on-using-cc-licenses-in-an-ai-ecosystem/ `[web]`
+### Creative Commons — Guidance on CC Licensing in the Age of AI (September 2026)
+**File:** `commons/CC_Licensing_Guidance_AI_2026.pdf` `[PDF]`
+**Source:** https://creativecommons.org/2026/09/03/guidance-on-using-cc-licenses-in-an-ai-ecosystem/
 
 Machine-readable preference signals for AI use of content and data. Operationalizes the attribution that Leiden calls for.
 
