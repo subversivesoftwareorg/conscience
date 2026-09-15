@@ -126,3 +126,27 @@ fn no_model_uses_unknown_tier() {
     let e = estimate_session_energy(&s, &c);
     assert!((e.total_wh - 1.0).abs() < 0.01);
 }
+
+#[test]
+fn water_estimate_from_energy() {
+    let sessions = vec![session_with("claude-fable-5", 0, 10_000, 0, 0)]; // 15 Wh
+    let config = EnergyConfig {
+        grid_carbon_intensity: Some(0.42),
+        water_liters_per_kwh: Some(1.8),
+        ..Default::default()
+    };
+    let est = estimate_total_energy(&sessions, &config);
+    // 15 Wh = 0.015 kWh * 1.8 = 0.027 liters
+    assert!(est.water_liters.is_some());
+    assert!((est.water_liters.unwrap() - 0.027).abs() < 0.001);
+}
+
+#[test]
+fn water_estimate_with_default_config() {
+    let sessions = vec![session_with("claude-fable-5", 0, 100_000, 0, 0)]; // 150 Wh
+    let config = EnergyConfig::default();
+    let est = estimate_total_energy(&sessions, &config);
+    // 150 Wh = 0.15 kWh * 1.8 (default) = 0.27 liters
+    assert!(est.water_liters.is_some());
+    assert!((est.water_liters.unwrap() - 0.27).abs() < 0.01);
+}

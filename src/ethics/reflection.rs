@@ -183,11 +183,15 @@ fn build_proportionality_reflection(
             &ai_data.sessions,
             &energy_config,
         );
+        let water_note = est.water_liters
+            .map(|w| format!(", ~{:.1}L water", w))
+            .unwrap_or_default();
         context_parts.push(format!(
-            "{:.1}K output tokens consumed across {} sessions (estimated ~{:.0} Wh energy)",
+            "{:.1}K output tokens consumed across {} sessions (estimated ~{:.0} Wh energy{})",
             output_tokens as f64 / 1_000.0,
             ai_data.session_count,
-            est.total_wh
+            est.total_wh,
+            water_note,
         ));
     }
 

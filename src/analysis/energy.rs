@@ -48,6 +48,8 @@ pub struct EnergyEstimate {
     pub uncertainty_range: (f64, f64),
     pub co2_kg: Option<f64>,
     pub grid_carbon_intensity: Option<f64>,
+    pub water_liters: Option<f64>,
+    pub water_liters_per_kwh: Option<f64>,
     pub methodology: String,
 }
 
@@ -200,6 +202,7 @@ pub fn estimate_total_energy(sessions: &[AiSession], config: &EnergyConfig) -> E
     };
 
     let co2_kg = config.grid_carbon_intensity.map(|gi| total_wh / 1000.0 * gi);
+    let water_liters = config.water_liters_per_kwh.map(|wl| total_wh / 1000.0 * wl);
 
     EnergyEstimate {
         period_days: 0,
@@ -214,7 +217,9 @@ pub fn estimate_total_energy(sessions: &[AiSession], config: &EnergyConfig) -> E
         ),
         co2_kg,
         grid_carbon_intensity: config.grid_carbon_intensity,
+        water_liters,
+        water_liters_per_kwh: config.water_liters_per_kwh,
         methodology: "Estimates based on Jegham et al. 2025, mdodkins 2026, Patterson et al. 2025. \
-            No provider publishes official per-model energy data.".to_string(),
+            Water: Li et al. 2023. No provider publishes official per-model energy or water data.".to_string(),
     }
 }

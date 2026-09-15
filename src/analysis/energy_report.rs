@@ -67,6 +67,20 @@ pub fn print_energy_report(estimate: &EnergyEstimate) {
             co2, intensity
         );
     }
+    if let Some(water) = estimate.water_liters {
+        let rate = estimate.water_liters_per_kwh.unwrap_or(1.8);
+        if water >= 1.0 {
+            println!(
+                "    Estimated water: {:.1} liters (at {:.1} L/kWh)",
+                water, rate
+            );
+        } else {
+            println!(
+                "    Estimated water: {:.0} mL (at {:.1} L/kWh)",
+                water * 1000.0, rate
+            );
+        }
+    }
     println!();
     println!("  Sources: {}", estimate.methodology);
     println!();

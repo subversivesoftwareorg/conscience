@@ -206,6 +206,8 @@ pub struct EnergyConfig {
     pub overrides: BTreeMap<String, EnergyOverride>,
     #[serde(default)]
     pub grid_carbon_intensity: Option<f64>,
+    #[serde(default)]
+    pub water_liters_per_kwh: Option<f64>,
 }
 
 impl Default for EnergyConfig {
@@ -213,6 +215,7 @@ impl Default for EnergyConfig {
         Self {
             overrides: BTreeMap::new(),
             grid_carbon_intensity: Some(0.42),
+            water_liters_per_kwh: Some(1.8),
         }
     }
 }
