@@ -1,7 +1,8 @@
 use crate::ai_tools::models::*;
 use crate::ai_tools::parser::AiToolParser;
 use crate::error::{ConscienceError, Result};
-use std::path::{Path, PathBuf};
+use crate::project::ProjectScope;
+use std::path::PathBuf;
 
 pub struct CursorParser;
 
@@ -36,7 +37,7 @@ impl AiToolParser for CursorParser {
             .unwrap_or_else(|| "(not found)".to_string())
     }
 
-    fn parse(&self, _project_filter: Option<&Path>) -> Result<AiUsageSummary> {
+    fn parse(&self, _scope: Option<&ProjectScope>) -> Result<AiUsageSummary> {
         Err(ConscienceError::Other(anyhow::anyhow!(
             "Cursor parser is not yet implemented.\n\
             Help us build it! If you use Cursor, please share sample log data at:\n\

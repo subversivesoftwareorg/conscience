@@ -5,8 +5,37 @@ use conscience::config::Config;
 use conscience::dashboard;
 use conscience::ethics;
 use conscience::ingest;
+use conscience::project::{self, ProjectScope};
 use conscience::report;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+/// Scope for commands that operate on one project: `--project` if given,
+/// otherwise the current directory. Fails if the path does not exist.
+fn project_scope(project: Option<&Path>) -> Result<ProjectScope, Box<dyn std::error::Error>> {
+    Ok(project::resolve_project(project)?)
+}
+
+/// Scope for commands that default to every project on this machine:
+/// only restricted when `--project` is given explicitly.
+fn optional_scope(
+    project: Option<&Path>,
+) -> Result<Option<ProjectScope>, Box<dyn std::error::Error>> {
+    match project {
+        Some(p) => Ok(Some(project::resolve_project(Some(p))?)),
+        None => Ok(None),
+    }
+}
+
+/// Manifest for a cross-project command: from the explicit project if given,
+/// otherwise from the current directory (thresholds still apply to "all").
+fn manifest_for(scope: Option<&ProjectScope>) -> Option<ethics::manifest::Manifest> {
+    match scope {
+        Some(s) => s.manifest.clone(),
+        None => std::env::current_dir()
+            .ok()
+            .and_then(|cwd| ethics::manifest::Manifest::load(&cwd)),
+    }
+}
 
 #[derive(Parser)]
 #[command(
@@ -454,7 +483,8 @@ async fn run_github_report(repo: &str, days: u32) -> Result<(), Box<dyn std::err
 fn run_claude_code_ingest(
     project: Option<&std::path::Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let summary = ingest::ai::ingest_claude_code(project)?;
+    let scope = optional_scope(project)?;
+    let summary = ingest::ai::ingest_claude_code(scope.as_ref())?;
     let json = serde_json::to_string_pretty(&summary)?;
     println!("{}", json);
     Ok(())
@@ -466,9 +496,10 @@ fn run_ai_report(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let show_claude = tool.is_none() || tool == Some("claude-code");
     let show_codex = tool.is_none() || tool == Some("codex");
+    let scope = optional_scope(project)?;
 
     if show_claude {
-        let summary = ingest::ai::ingest_claude_code(project)?;
+        let summary = ingest::ai::ingest_claude_code(scope.as_ref())?;
         ai_tools::report::print_ai_summary(&summary);
     }
 
@@ -476,7 +507,7 @@ fn run_ai_report(
         use crate::ai_tools::parser::AiToolParser as _;
         let parser = ai_tools::codex::CodexParser::new();
         if parser.detect() {
-            match parser.parse(project) {
+            match parser.parse(scope.as_ref()) {
                 Ok(summary) if summary.session_count > 0 => {
                     ai_tools::report::print_ai_summary(&summary);
                 }
@@ -504,15 +535,14 @@ fn run_energy_report(
     days: u32,
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let summary = ingest::ai::ingest_claude_code(project)?;
+    let scope = optional_scope(project)?;
+    let summary = ingest::ai::ingest_claude_code(scope.as_ref())?;
     if summary.session_count == 0 {
         eprintln!("No Claude Code sessions found.");
         std::process::exit(1);
     }
 
-    let cwd = std::env::current_dir()?;
-    let manifest_dir = project.unwrap_or(&cwd);
-    let manifest = ethics::manifest::Manifest::load(manifest_dir);
+    let manifest = manifest_for(scope.as_ref());
     let config = manifest
         .as_ref()
         .map(|m| m.thresholds.energy.clone())
@@ -545,7 +575,8 @@ async fn run_authorship(
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let github_summary = ingest::github::ingest_github(repo, days).await?;
-    let ai_summary = ingest::ai::ingest_claude_code(project)?;
+    let scope = optional_scope(project)?;
+    let ai_summary = ingest::ai::ingest_claude_code(scope.as_ref())?;
 
     if ai_summary.session_count == 0 {
         eprintln!("No Claude Code sessions found. Authorship analysis requires AI session data.");
@@ -569,15 +600,14 @@ async fn run_attention(
     json_output: bool,
     html_path: Option<&std::path::Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let summary = ingest::ai::ingest_claude_code(project)?;
+    let scope = optional_scope(project)?;
+    let summary = ingest::ai::ingest_claude_code(scope.as_ref())?;
     if summary.session_count == 0 {
         eprintln!("No Claude Code sessions found.");
         std::process::exit(1);
     }
 
-    let cwd = std::env::current_dir()?;
-    let manifest_dir = project.unwrap_or(&cwd);
-    let manifest = ethics::manifest::Manifest::load(manifest_dir);
+    let manifest = manifest_for(scope.as_ref());
     let th = manifest
         .as_ref()
         .map(|m| m.thresholds.attention.clone())
@@ -620,9 +650,8 @@ async fn run_push(
         .ok()
         .or(config.dashboard.api_key);
 
-    let cwd = std::env::current_dir()?;
-    let manifest_dir = project.unwrap_or(&cwd);
-    let manifest = ethics::manifest::Manifest::load(manifest_dir);
+    let scope = project_scope(project)?;
+    let manifest = scope.manifest.clone();
 
     let github_summary = if let Some(r) = repo {
         Some(ingest::github::ingest_github(r, days).await?)
@@ -631,7 +660,7 @@ async fn run_push(
     };
 
     let ai_summary = {
-        let summary = ingest::ai::ingest_claude_code(project)?;
+        let summary = ingest::ai::ingest_claude_code(Some(&scope))?;
         if summary.session_count > 0 {
             Some(summary)
         } else {
@@ -645,22 +674,12 @@ async fn run_push(
         manifest.as_ref(),
     );
 
-    let project_name = manifest
-        .as_ref()
-        .map(|m| m.project.name.clone())
-        .filter(|n| !n.is_empty())
-        .unwrap_or_else(|| {
-            manifest_dir
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .to_string()
-        });
+    let project_name = scope.display_name();
 
     let payload = dashboard::models::DashboardPayload::new(
         project_name,
         repo.map(|s| s.to_string()),
-        project.map(|p| p.to_string_lossy().to_string()),
+        Some(scope.root.to_string_lossy().to_string()),
         analysis,
         ai_summary.as_ref().map(|s| s.session_count),
         ai_summary.as_ref().map(|s| s.total_tokens.output),
@@ -677,7 +696,8 @@ fn run_retro_tokens(
     project: Option<&std::path::Path>,
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let summary = ingest::ai::ingest_claude_code(project)?;
+    let scope = optional_scope(project)?;
+    let summary = ingest::ai::ingest_claude_code(scope.as_ref())?;
     if summary.session_count == 0 {
         eprintln!("No Claude Code sessions found.");
         std::process::exit(1);
@@ -1014,9 +1034,9 @@ async fn run_reflect(
     save: Option<Option<PathBuf>>,
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let cwd = std::env::current_dir()?;
-    let manifest_dir = project.unwrap_or(&cwd);
-    let manifest = ethics::manifest::Manifest::load(manifest_dir);
+    let scope = project_scope(project)?;
+    let manifest = scope.manifest.clone();
+    let manifest_dir = scope.root.clone();
 
     let github_summary = if let Some(r) = repo {
         Some(ingest::github::ingest_github(r, days).await?)
@@ -1025,7 +1045,7 @@ async fn run_reflect(
     };
 
     let ai_summary = {
-        let summary = ingest::ai::ingest_claude_code(project)?;
+        let summary = ingest::ai::ingest_claude_code(Some(&scope))?;
         if summary.session_count > 0 {
             Some(summary)
         } else {
@@ -1122,12 +1142,11 @@ async fn run_evaluate(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let github_summary = ingest::github::ingest_pr(pr_url).await?;
 
-    let cwd = std::env::current_dir()?;
-    let manifest_dir = project.unwrap_or(&cwd);
-    let manifest = ethics::manifest::Manifest::load(manifest_dir);
+    let scope = project_scope(project)?;
+    let manifest = scope.manifest.clone();
 
     let ai_summary = {
-        let summary = ingest::ai::ingest_claude_code(project)?;
+        let summary = ingest::ai::ingest_claude_code(Some(&scope))?;
         if summary.session_count > 0 {
             Some(summary)
         } else {
@@ -1245,12 +1264,11 @@ async fn run_examine(
     project: Option<&std::path::Path>,
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Load conscience.yaml if present
-    let cwd = std::env::current_dir()?;
-    let manifest_dir = project.unwrap_or(&cwd);
-    let manifest = ethics::manifest::Manifest::load(manifest_dir);
+    // Resolve the project once; the manifest, if any, comes with it.
+    let scope = project_scope(project)?;
+    let manifest = scope.manifest.clone();
     if manifest.is_some() {
-        eprintln!("Loaded conscience.yaml from {}", manifest_dir.display());
+        eprintln!("Loaded conscience.yaml from {}", scope.root.display());
     }
 
     let github_summary = if let Some(r) = repo {
@@ -1260,7 +1278,7 @@ async fn run_examine(
     };
 
     let ai_summary = {
-        let summary = ingest::ai::ingest_claude_code(project)?;
+        let summary = ingest::ai::ingest_claude_code(Some(&scope))?;
         if summary.session_count > 0 {
             Some(summary)
         } else {

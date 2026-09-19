@@ -35,6 +35,13 @@ project:
     # - name: "End users"
     #   description: "Data collection, attention, privacy trade-offs"
 
+  # Other checkouts of this same project (git worktrees, sibling clones).
+  # AI sessions started in these directories count toward this project.
+  # Paths may be absolute, start with ~/, or be relative to this file.
+  # worktrees:
+  #   - "../conscience-feature-branch"
+  #   - "~/work/conscience-hotfix"
+
 # --- Value Categories ---
 # Tag PRs and features with these categories to map AI-assisted work
 # to the value it delivers. Use GitHub labels matching these names,

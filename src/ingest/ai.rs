@@ -2,9 +2,11 @@ use crate::ai_tools::claude_code::ClaudeCodeParser;
 use crate::ai_tools::models::AiUsageSummary;
 use crate::ai_tools::parser::AiToolParser;
 use crate::error::Result;
-use std::path::Path;
+use crate::project::ProjectScope;
 
-pub fn ingest_claude_code(project_filter: Option<&Path>) -> Result<AiUsageSummary> {
+/// Ingest Claude Code sessions. `None` scans every project; `Some(scope)`
+/// restricts to the resolved project and its worktrees.
+pub fn ingest_claude_code(scope: Option<&ProjectScope>) -> Result<AiUsageSummary> {
     let parser = ClaudeCodeParser::new();
 
     if !parser.detect() {
@@ -14,11 +16,24 @@ pub fn ingest_claude_code(project_filter: Option<&Path>) -> Result<AiUsageSummar
         eprintln!("Scanning Claude Code logs at {}", parser.data_path());
     }
 
-    if let Some(filter) = project_filter {
-        eprintln!("Filtering to project: {}", filter.display());
+    if let Some(s) = scope {
+        let matched = parser.matching_project_dirs(s);
+        eprintln!(
+            "Project: {} ({} session director{} matched)",
+            s.root.display(),
+            matched.len(),
+            if matched.len() == 1 { "y" } else { "ies" }
+        );
+        if !s.worktrees.is_empty() {
+            for wt in &s.worktrees {
+                eprintln!("  + worktree {}", wt.display());
+            }
+        }
+    } else {
+        eprintln!("Project: all Claude Code projects");
     }
 
-    let summary = parser.parse(project_filter)?;
+    let summary = parser.parse(scope)?;
 
     eprintln!(
         "Found {} session(s), {} total turns, {} output tokens",

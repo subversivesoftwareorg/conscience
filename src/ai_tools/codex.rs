@@ -1,6 +1,7 @@
 use crate::ai_tools::models::*;
 use crate::ai_tools::parser::AiToolParser;
 use crate::error::{ConscienceError, Result};
+use crate::project::ProjectScope;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -218,7 +219,7 @@ impl AiToolParser for CodexParser {
         self.sessions_dir().to_string_lossy().to_string()
     }
 
-    fn parse(&self, _project_filter: Option<&Path>) -> Result<AiUsageSummary> {
+    fn parse(&self, scope: Option<&ProjectScope>) -> Result<AiUsageSummary> {
         let session_files = self.find_session_files();
         if session_files.is_empty() {
             return Ok(AiUsageSummary {
@@ -247,6 +248,18 @@ impl AiToolParser for CodexParser {
         for path in &session_files {
             match self.parse_session(path) {
                 Ok(session) => {
+                    // Codex records the working directory per session; that is
+                    // the only project identity available, so scope on it.
+                    if let Some(s) = scope {
+                        let in_scope = session
+                            .project_path
+                            .as_deref()
+                            .is_some_and(|cwd| s.matches_cwd(cwd));
+                        if !in_scope {
+                            continue;
+                        }
+                    }
+
                     total_tokens.input += session.tokens.input;
                     total_tokens.output += session.tokens.output;
                     total_tokens.cache_creation += session.tokens.cache_creation;

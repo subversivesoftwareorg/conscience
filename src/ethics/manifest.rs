@@ -35,6 +35,11 @@ pub struct ProjectInfo {
     pub beneficiaries: Vec<Stakeholder>,
     #[serde(default)]
     pub cost_bearers: Vec<Stakeholder>,
+    /// Additional checkouts (git worktrees, sibling clones) whose AI sessions
+    /// belong to this project. Absolute, `~/`-relative, or relative to the
+    /// manifest directory.
+    #[serde(default)]
+    pub worktrees: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -1,10 +1,11 @@
-use crate::ai_tools::claude_code::{decode_project_dir, ClaudeCodeParser};
+use crate::ai_tools::claude_code::ClaudeCodeParser;
 use crate::ai_tools::parser::AiToolParser;
 use crate::error::Result;
 use crate::ethics;
 use crate::ethics::manifest::Manifest;
 use crate::ethics::models::*;
 use crate::ingest;
+use crate::project::{resolve_project, ProjectScope};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -30,20 +31,16 @@ pub async fn analyze_all_projects(days: u32) -> Result<MultiProjectAnalysis> {
 
     for (project_path, _dir_name) in &project_dirs {
         let path = PathBuf::from(project_path);
-        let manifest = Manifest::load(&path);
+        // The directory may no longer exist (deleted checkout); still analyze
+        // its sessions, but only load a manifest when it does.
+        let scope = match resolve_project(Some(&path)) {
+            Ok(s) => s,
+            Err(_) => ProjectScope::from_root(path.clone()),
+        };
+        let manifest: Option<Manifest> = scope.manifest.clone();
+        let project_name = scope.display_name();
 
-        let project_name = manifest
-            .as_ref()
-            .map(|m| m.project.name.clone())
-            .filter(|n| !n.is_empty())
-            .unwrap_or_else(|| {
-                path.file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string()
-            });
-
-        let ai_summary = match ingest::ai::ingest_claude_code(Some(&path)) {
+        let ai_summary = match ingest::ai::ingest_claude_code(Some(&scope)) {
             Ok(s) if s.session_count > 0 => s,
             _ => continue,
         };
@@ -131,7 +128,7 @@ fn discover_projects(parser: &ClaudeCodeParser) -> Vec<(String, String)> {
                 continue;
             }
 
-            let project_path = decode_project_dir(&dir_name);
+            let project_path = parser.project_root_for_dir(&dir_name);
             if seen_paths.insert(project_path.clone()) {
                 result.push((project_path, dir_name));
             }

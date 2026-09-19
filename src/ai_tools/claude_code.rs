@@ -3,6 +3,7 @@ use crate::ai_tools::models::*;
 use crate::ai_tools::models::{AgentActionsSummary, WorkCategory};
 use crate::ai_tools::parser::AiToolParser;
 use crate::error::{ConscienceError, Result};
+use crate::project::ProjectScope;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
@@ -28,11 +29,68 @@ impl ClaudeCodeParser {
         Self { claude_dir }
     }
 
+    /// Point the parser at a specific `.claude`-style directory instead of
+    /// the user's home. Used by tests with fixture trees.
+    pub fn with_dir(claude_dir: PathBuf) -> Self {
+        Self { claude_dir }
+    }
+
     fn projects_dir(&self) -> PathBuf {
         self.claude_dir.join("projects")
     }
 
-    fn find_session_files(&self, project_filter: Option<&Path>) -> Vec<(String, PathBuf)> {
+    /// Names of the per-project directories under `~/.claude/projects` that
+    /// belong to `scope`, matched exactly by Claude's own path encoding.
+    pub fn matching_project_dirs(&self, scope: &ProjectScope) -> Vec<String> {
+        let projects_dir = self.projects_dir();
+        let entries = match fs::read_dir(&projects_dir) {
+            Ok(e) => e,
+            Err(_) => return Vec::new(),
+        };
+        entries
+            .flatten()
+            .filter(|e| e.path().is_dir())
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|name| scope.matches_encoded_dir(name))
+            .collect()
+    }
+
+    /// Recover the real filesystem path for a Claude project directory.
+    ///
+    /// The directory name is a lossy encoding, so the authoritative source is
+    /// the `cwd` field recorded in the sessions themselves. Falls back to
+    /// decoding the name when no session carries a cwd.
+    pub fn project_root_for_dir(&self, dir_name: &str) -> String {
+        let dir = self.projects_dir().join(dir_name);
+        if let Ok(entries) = fs::read_dir(&dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.extension().is_some_and(|e| e == "jsonl") {
+                    continue;
+                }
+                if let Some(cwd) = Self::first_cwd(&path) {
+                    return cwd;
+                }
+            }
+        }
+        decode_project_dir(dir_name)
+    }
+
+    fn first_cwd(path: &Path) -> Option<String> {
+        let file = fs::File::open(path).ok()?;
+        let reader = BufReader::new(file);
+        // The cwd appears in the first few records; don't read whole files.
+        for line in reader.lines().take(50).flatten() {
+            if let Ok(value) = serde_json::from_str::<Value>(&line) {
+                if let Some(cwd) = value.get("cwd").and_then(|v| v.as_str()) {
+                    return Some(cwd.to_string());
+                }
+            }
+        }
+        None
+    }
+
+    fn find_session_files(&self, scope: Option<&ProjectScope>) -> Vec<(String, PathBuf)> {
         let projects_dir = self.projects_dir();
         if !projects_dir.exists() {
             return Vec::new();
@@ -53,9 +111,8 @@ impl ClaudeCodeParser {
 
             let dir_name = entry.file_name().to_string_lossy().to_string();
 
-            if let Some(filter) = project_filter {
-                let decoded = decode_project_dir(&dir_name);
-                if !decoded.contains(&filter.to_string_lossy().to_string()) {
+            if let Some(s) = scope {
+                if !s.matches_encoded_dir(&dir_name) {
                     continue;
                 }
             }
@@ -312,8 +369,8 @@ impl AiToolParser for ClaudeCodeParser {
         self.projects_dir().to_string_lossy().to_string()
     }
 
-    fn parse(&self, project_filter: Option<&Path>) -> Result<AiUsageSummary> {
-        let session_files = self.find_session_files(project_filter);
+    fn parse(&self, scope: Option<&ProjectScope>) -> Result<AiUsageSummary> {
+        let session_files = self.find_session_files(scope);
         let mut sessions = Vec::new();
         let mut total_tokens = TokenUsage::default();
         let mut total_turns = TurnCounts::default();
@@ -407,6 +464,11 @@ fn extract_file_touch(
     }
 }
 
+/// Best-effort inverse of Claude's directory encoding.
+///
+/// Lossy: every `-` becomes `/`, so a path that contained a dash, dot, or
+/// underscore decodes wrongly. Only use as a fallback when no session in the
+/// directory recorded its real `cwd`; see `project_root_for_dir`.
 pub fn decode_project_dir(dir_name: &str) -> String {
     dir_name.replace('-', "/")
 }
