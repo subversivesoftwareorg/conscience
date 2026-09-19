@@ -222,28 +222,12 @@ impl AiToolParser for CodexParser {
     fn parse(&self, scope: Option<&ProjectScope>) -> Result<AiUsageSummary> {
         let session_files = self.find_session_files();
         if session_files.is_empty() {
-            return Ok(AiUsageSummary {
-                tool: AiTool::Codex,
-                session_count: 0,
-                total_tokens: TokenUsage::default(),
-                total_turns: TurnCounts::default(),
-                models_used: HashMap::new(),
-                tools_used: HashMap::new(),
-                files_touched_count: 0,
-                unique_files_touched: 0,
-                all_bash_commands: Vec::new(),
-                agent_actions_summary: AgentActionsSummary::default(),
-                sessions: Vec::new(),
-            });
+            return Ok(AiUsageSummary::empty(AiTool::Codex));
         }
 
         eprintln!("Scanning Codex sessions at {}", self.sessions_dir().display());
 
         let mut sessions = Vec::new();
-        let mut total_tokens = TokenUsage::default();
-        let mut total_turns = TurnCounts::default();
-        let mut models_used: HashMap<String, u64> = HashMap::new();
-        let mut all_tools_used: HashMap<String, u64> = HashMap::new();
 
         for path in &session_files {
             match self.parse_session(path) {
@@ -259,22 +243,6 @@ impl AiToolParser for CodexParser {
                             continue;
                         }
                     }
-
-                    total_tokens.input += session.tokens.input;
-                    total_tokens.output += session.tokens.output;
-                    total_tokens.cache_creation += session.tokens.cache_creation;
-                    total_tokens.cache_read += session.tokens.cache_read;
-                    total_turns.human += session.turns.human;
-                    total_turns.assistant += session.turns.assistant;
-                    total_turns.total += session.turns.total;
-
-                    if let Some(ref m) = session.model {
-                        *models_used.entry(m.clone()).or_insert(0) += 1;
-                    }
-                    for (tool, count) in &session.tools_used {
-                        *all_tools_used.entry(tool.clone()).or_insert(0) += count;
-                    }
-
                     sessions.push(session);
                 }
                 Err(e) => {
@@ -283,35 +251,13 @@ impl AiToolParser for CodexParser {
             }
         }
 
-        let all_bash_commands: Vec<BashCommand> = sessions
-            .iter()
-            .flat_map(|s| {
-                s.bash_commands.iter().map(|cmd| BashCommand {
-                    command: cmd.clone(),
-                    session_id: s.session_id.clone(),
-                })
-            })
-            .collect();
+        let summary = AiUsageSummary::from_sessions(AiTool::Codex, sessions);
 
         eprintln!(
             "Found {} Codex session(s), {} total turns, {} output tokens",
-            sessions.len(),
-            total_turns.total,
-            total_tokens.output,
+            summary.session_count, summary.total_turns.total, summary.total_tokens.output,
         );
 
-        Ok(AiUsageSummary {
-            tool: AiTool::Codex,
-            session_count: sessions.len() as u64,
-            total_tokens,
-            total_turns,
-            models_used,
-            tools_used: all_tools_used,
-            files_touched_count: 0,
-            unique_files_touched: 0,
-            all_bash_commands,
-            agent_actions_summary: AgentActionsSummary::default(),
-            sessions,
-        })
+        Ok(summary)
     }
 }

@@ -2,7 +2,7 @@ use crate::error::Result;
 use crate::github::auth;
 use crate::github::client::GitHubClient;
 use crate::github::models::RepoSummary;
-use chrono::{Duration, Utc};
+use crate::interval::Interval;
 
 pub async fn ingest_pr(pr_url: &str) -> Result<RepoSummary> {
     let (owner, repo_name, number) = GitHubClient::parse_pr_url(pr_url)?;
@@ -36,14 +36,16 @@ pub async fn ingest_pr(pr_url: &str) -> Result<RepoSummary> {
     })
 }
 
-pub async fn ingest_github(repo: &str, days: u32) -> Result<RepoSummary> {
+/// Fetch commits and PRs for `repo` inside `interval`. The interval is
+/// resolved by the caller so it is the same one applied to AI sessions.
+pub async fn ingest_github(repo: &str, interval: &Interval) -> Result<RepoSummary> {
     let token = auth::resolve_token()?;
     let octocrab = auth::build_client(&token)?;
     let client = GitHubClient::new(octocrab);
 
     let (owner, repo_name) = GitHubClient::parse_repo(repo)?;
-    let until = Utc::now();
-    let since = until - Duration::days(days as i64);
+    let until = interval.end;
+    let since = interval.start;
 
     eprintln!(
         "Fetching data for {}/{} from {} to {}",

@@ -120,6 +120,9 @@ fn make_ai_summary(sessions: Vec<AiSession>) -> AiUsageSummary {
         all_bash_commands: all_bash,
         agent_actions_summary: AgentActionsSummary::default(),
         sessions,
+        period_start: None,
+        period_end: None,
+        undated_sessions: 0,
     }
 }
 

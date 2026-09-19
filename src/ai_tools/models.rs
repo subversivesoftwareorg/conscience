@@ -217,6 +217,105 @@ pub struct AiUsageSummary {
     pub all_bash_commands: Vec<BashCommand>,
     pub agent_actions_summary: AgentActionsSummary,
     pub sessions: Vec<AiSession>,
+    /// Start of the interval these totals cover; `None` means all time.
+    #[serde(default)]
+    pub period_start: Option<DateTime<Utc>>,
+    /// End of the interval these totals cover; `None` means all time.
+    #[serde(default)]
+    pub period_end: Option<DateTime<Utc>>,
+    /// Sessions that carried no timestamp and so could not be placed in or
+    /// out of the interval. Excluded from every total above.
+    #[serde(default)]
+    pub undated_sessions: u64,
+}
+
+impl AiUsageSummary {
+    /// An empty summary for a tool with no data.
+    pub fn empty(tool: AiTool) -> Self {
+        Self::from_sessions(tool, Vec::new())
+    }
+
+    /// Build every total from a list of sessions. This is the single place
+    /// aggregation happens, so parsers and interval filtering agree exactly.
+    pub fn from_sessions(tool: AiTool, sessions: Vec<AiSession>) -> Self {
+        let mut total_tokens = TokenUsage::default();
+        let mut total_turns = TurnCounts::default();
+        let mut models_used: HashMap<String, u64> = HashMap::new();
+        let mut tools_used: HashMap<String, u64> = HashMap::new();
+        let mut unique_files: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let mut files_touched_count = 0u64;
+
+        for session in &sessions {
+            total_tokens.input += session.tokens.input;
+            total_tokens.output += session.tokens.output;
+            total_tokens.cache_creation += session.tokens.cache_creation;
+            total_tokens.cache_read += session.tokens.cache_read;
+
+            total_turns.human += session.turns.human;
+            total_turns.assistant += session.turns.assistant;
+            total_turns.machine += session.turns.machine;
+            total_turns.total += session.turns.total;
+
+            if let Some(m) = &session.model {
+                *models_used.entry(m.clone()).or_insert(0) += 1;
+            }
+            for (tool_name, count) in &session.tools_used {
+                *tools_used.entry(tool_name.clone()).or_insert(0) += count;
+            }
+            for file in &session.files_touched {
+                unique_files.insert(file.path.as_str());
+                files_touched_count += 1;
+            }
+        }
+
+        let unique_files_touched = unique_files.len() as u64;
+
+        let all_bash_commands: Vec<BashCommand> = sessions
+            .iter()
+            .flat_map(|s| {
+                s.bash_commands.iter().map(|cmd| BashCommand {
+                    command: cmd.clone(),
+                    session_id: s.session_id.clone(),
+                })
+            })
+            .collect();
+
+        Self {
+            tool,
+            session_count: sessions.len() as u64,
+            total_tokens,
+            total_turns,
+            models_used,
+            tools_used,
+            files_touched_count,
+            unique_files_touched,
+            all_bash_commands,
+            agent_actions_summary: AgentActionsSummary::default(),
+            sessions,
+            period_start: None,
+            period_end: None,
+            undated_sessions: 0,
+        }
+    }
+
+    /// A new summary containing only sessions that overlap `interval`,
+    /// with every total rebuilt. Undated sessions are dropped and counted.
+    pub fn restrict(&self, interval: &crate::interval::Interval) -> Self {
+        let mut kept = Vec::new();
+        let mut undated = 0u64;
+        for s in &self.sessions {
+            match interval.covers_session(s) {
+                Some(true) => kept.push(s.clone()),
+                Some(false) => {}
+                None => undated += 1,
+            }
+        }
+        let mut out = Self::from_sessions(self.tool.clone(), kept);
+        out.period_start = Some(interval.start);
+        out.period_end = Some(interval.end);
+        out.undated_sessions = undated;
+        out
+    }
 }
 
 /// Aggregate counts of agent actions across all sessions

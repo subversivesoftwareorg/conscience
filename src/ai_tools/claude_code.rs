@@ -372,70 +372,17 @@ impl AiToolParser for ClaudeCodeParser {
     fn parse(&self, scope: Option<&ProjectScope>) -> Result<AiUsageSummary> {
         let session_files = self.find_session_files(scope);
         let mut sessions = Vec::new();
-        let mut total_tokens = TokenUsage::default();
-        let mut total_turns = TurnCounts::default();
-        let mut models_used: HashMap<String, u64> = HashMap::new();
-        let mut all_tools_used: HashMap<String, u64> = HashMap::new();
-        let mut all_files: HashSet<String> = HashSet::new();
-        let mut total_files_touched = 0u64;
 
         for (session_id, path) in &session_files {
             match self.parse_session(session_id, path) {
-                Ok(session) => {
-                    total_tokens.input += session.tokens.input;
-                    total_tokens.output += session.tokens.output;
-                    total_tokens.cache_creation += session.tokens.cache_creation;
-                    total_tokens.cache_read += session.tokens.cache_read;
-
-                    total_turns.human += session.turns.human;
-                    total_turns.assistant += session.turns.assistant;
-                    total_turns.machine += session.turns.machine;
-                    total_turns.total += session.turns.total;
-
-                    if let Some(ref m) = session.model {
-                        *models_used.entry(m.clone()).or_insert(0) += 1;
-                    }
-
-                    for (tool, count) in &session.tools_used {
-                        *all_tools_used.entry(tool.clone()).or_insert(0) += count;
-                    }
-
-                    for file in &session.files_touched {
-                        all_files.insert(file.path.clone());
-                        total_files_touched += 1;
-                    }
-
-                    sessions.push(session);
-                }
+                Ok(session) => sessions.push(session),
                 Err(e) => {
                     eprintln!("Warning: failed to parse session {}: {}", session_id, e);
                 }
             }
         }
 
-        let all_bash_commands: Vec<BashCommand> = sessions
-            .iter()
-            .flat_map(|s| {
-                s.bash_commands.iter().map(|cmd| BashCommand {
-                    command: cmd.clone(),
-                    session_id: s.session_id.clone(),
-                })
-            })
-            .collect();
-
-        Ok(AiUsageSummary {
-            tool: AiTool::ClaudeCode,
-            session_count: sessions.len() as u64,
-            total_tokens,
-            total_turns,
-            models_used,
-            tools_used: all_tools_used,
-            files_touched_count: total_files_touched,
-            unique_files_touched: all_files.len() as u64,
-            all_bash_commands,
-            agent_actions_summary: AgentActionsSummary::default(),
-            sessions,
-        })
+        Ok(AiUsageSummary::from_sessions(AiTool::ClaudeCode, sessions))
     }
 }
 

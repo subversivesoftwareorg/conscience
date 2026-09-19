@@ -6,5 +6,6 @@ pub mod error;
 pub mod ethics;
 pub mod github;
 pub mod ingest;
+pub mod interval;
 pub mod project;
 pub mod report;

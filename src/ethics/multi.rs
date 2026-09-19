@@ -5,11 +5,12 @@ use crate::ethics;
 use crate::ethics::manifest::Manifest;
 use crate::ethics::models::*;
 use crate::ingest;
+use crate::interval::Interval;
 use crate::project::{resolve_project, ProjectScope};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-pub async fn analyze_all_projects(days: u32) -> Result<MultiProjectAnalysis> {
+pub async fn analyze_all_projects(interval: &Interval) -> Result<MultiProjectAnalysis> {
     let parser = ClaudeCodeParser::new();
     if !parser.detect() {
         eprintln!("No Claude Code data found at {}", parser.data_path());
@@ -40,14 +41,14 @@ pub async fn analyze_all_projects(days: u32) -> Result<MultiProjectAnalysis> {
         let manifest: Option<Manifest> = scope.manifest.clone();
         let project_name = scope.display_name();
 
-        let ai_summary = match ingest::ai::ingest_claude_code(Some(&scope)) {
+        let ai_summary = match ingest::ai::ingest_claude_code(Some(&scope), Some(interval)) {
             Ok(s) if s.session_count > 0 => s,
             _ => continue,
         };
 
         let github_summary = if let Some(ref m) = manifest {
             if let Some(ref repo) = m.github.repo {
-                match ingest::github::ingest_github(repo, days).await {
+                match ingest::github::ingest_github(repo, interval).await {
                     Ok(s) => Some(s),
                     Err(e) => {
                         eprintln!("  Warning: failed to fetch GitHub data for {}: {}", repo, e);

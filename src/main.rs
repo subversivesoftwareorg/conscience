@@ -5,6 +5,7 @@ use conscience::config::Config;
 use conscience::dashboard;
 use conscience::ethics;
 use conscience::ingest;
+use conscience::interval::Interval;
 use conscience::project::{self, ProjectScope};
 use conscience::report;
 use std::path::{Path, PathBuf};
@@ -468,14 +469,16 @@ fn run_setup() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 async fn run_github_ingest(repo: &str, days: u32) -> Result<(), Box<dyn std::error::Error>> {
-    let summary = ingest::github::ingest_github(repo, days).await?;
+    let interval = Interval::last_days(days);
+    let summary = ingest::github::ingest_github(repo, &interval).await?;
     let json = serde_json::to_string_pretty(&summary)?;
     println!("{}", json);
     Ok(())
 }
 
 async fn run_github_report(repo: &str, days: u32) -> Result<(), Box<dyn std::error::Error>> {
-    let summary = ingest::github::ingest_github(repo, days).await?;
+    let interval = Interval::last_days(days);
+    let summary = ingest::github::ingest_github(repo, &interval).await?;
     report::print_summary(&summary);
     Ok(())
 }
@@ -484,7 +487,8 @@ fn run_claude_code_ingest(
     project: Option<&std::path::Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let scope = optional_scope(project)?;
-    let summary = ingest::ai::ingest_claude_code(scope.as_ref())?;
+    // Raw ingest is deliberately all-time; it is a debugging view of the logs.
+    let summary = ingest::ai::ingest_claude_code(scope.as_ref(), None)?;
     let json = serde_json::to_string_pretty(&summary)?;
     println!("{}", json);
     Ok(())
@@ -499,7 +503,7 @@ fn run_ai_report(
     let scope = optional_scope(project)?;
 
     if show_claude {
-        let summary = ingest::ai::ingest_claude_code(scope.as_ref())?;
+        let summary = ingest::ai::ingest_claude_code(scope.as_ref(), None)?;
         ai_tools::report::print_ai_summary(&summary);
     }
 
@@ -536,9 +540,10 @@ fn run_energy_report(
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let scope = optional_scope(project)?;
-    let summary = ingest::ai::ingest_claude_code(scope.as_ref())?;
+    let interval = Interval::last_days(days);
+    let summary = ingest::ai::ingest_claude_code(scope.as_ref(), Some(&interval))?;
     if summary.session_count == 0 {
-        eprintln!("No Claude Code sessions found.");
+        eprintln!("No Claude Code sessions found in the last {} days.", days);
         std::process::exit(1);
     }
 
@@ -548,15 +553,7 @@ fn run_energy_report(
         .map(|m| m.thresholds.energy.clone())
         .unwrap_or_default();
 
-    let cutoff = chrono::Utc::now() - chrono::Duration::days(days as i64);
-    let filtered: Vec<_> = summary
-        .sessions
-        .iter()
-        .filter(|s| s.started_at.map_or(true, |t| t >= cutoff))
-        .cloned()
-        .collect();
-
-    let mut estimate = analysis::energy::estimate_total_energy(&filtered, &config);
+    let mut estimate = analysis::energy::estimate_total_energy(&summary.sessions, &config);
     estimate.period_days = days;
 
     if json_output {
@@ -574,9 +571,10 @@ async fn run_authorship(
     project: Option<&std::path::Path>,
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let github_summary = ingest::github::ingest_github(repo, days).await?;
+    let interval = Interval::last_days(days);
+    let github_summary = ingest::github::ingest_github(repo, &interval).await?;
     let scope = optional_scope(project)?;
-    let ai_summary = ingest::ai::ingest_claude_code(scope.as_ref())?;
+    let ai_summary = ingest::ai::ingest_claude_code(scope.as_ref(), Some(&interval))?;
 
     if ai_summary.session_count == 0 {
         eprintln!("No Claude Code sessions found. Authorship analysis requires AI session data.");
@@ -601,9 +599,10 @@ async fn run_attention(
     html_path: Option<&std::path::Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let scope = optional_scope(project)?;
-    let summary = ingest::ai::ingest_claude_code(scope.as_ref())?;
+    let interval = Interval::last_days(days);
+    let summary = ingest::ai::ingest_claude_code(scope.as_ref(), Some(&interval))?;
     if summary.session_count == 0 {
-        eprintln!("No Claude Code sessions found.");
+        eprintln!("No Claude Code sessions found in the last {} days.", days);
         std::process::exit(1);
     }
 
@@ -652,15 +651,16 @@ async fn run_push(
 
     let scope = project_scope(project)?;
     let manifest = scope.manifest.clone();
+    let interval = Interval::last_days(days);
 
     let github_summary = if let Some(r) = repo {
-        Some(ingest::github::ingest_github(r, days).await?)
+        Some(ingest::github::ingest_github(r, &interval).await?)
     } else {
         None
     };
 
     let ai_summary = {
-        let summary = ingest::ai::ingest_claude_code(Some(&scope))?;
+        let summary = ingest::ai::ingest_claude_code(Some(&scope), Some(&interval))?;
         if summary.session_count > 0 {
             Some(summary)
         } else {
@@ -683,7 +683,8 @@ async fn run_push(
         analysis,
         ai_summary.as_ref().map(|s| s.session_count),
         ai_summary.as_ref().map(|s| s.total_tokens.output),
-        days,
+        ai_summary.as_ref().map(|s| s.undated_sessions).unwrap_or(0),
+        &interval,
     );
 
     dashboard::push::push_analysis(&endpoint, &payload, api_key.as_deref()).await?;
@@ -697,21 +698,9 @@ fn run_retro_tokens(
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let scope = optional_scope(project)?;
-    let summary = ingest::ai::ingest_claude_code(scope.as_ref())?;
-    if summary.session_count == 0 {
-        eprintln!("No Claude Code sessions found.");
-        std::process::exit(1);
-    }
-
-    let cutoff = chrono::Utc::now() - chrono::Duration::hours(hours as i64);
-    let recent: Vec<_> = summary
-        .sessions
-        .into_iter()
-        .filter(|s| {
-            s.ended_at.map_or(false, |t| t >= cutoff)
-                || s.started_at.map_or(false, |t| t >= cutoff)
-        })
-        .collect();
+    let interval = Interval::last_hours(hours);
+    let summary = ingest::ai::ingest_claude_code(scope.as_ref(), Some(&interval))?;
+    let recent = summary.sessions;
 
     if recent.is_empty() {
         eprintln!("No sessions active in the last {} hours.", hours);
@@ -856,7 +845,8 @@ async fn run_digest(
     output: Option<&std::path::Path>,
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let analysis = ethics::multi::analyze_all_projects(days).await?;
+    let interval = Interval::last_days(days);
+    let analysis = ethics::multi::analyze_all_projects(&interval).await?;
 
     if analysis.total_projects == 0 {
         eprintln!("No projects found.");
@@ -1015,7 +1005,8 @@ async fn run_examine_all(
     days: u32,
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let analysis = ethics::multi::analyze_all_projects(days).await?;
+    let interval = Interval::last_days(days);
+    let analysis = ethics::multi::analyze_all_projects(&interval).await?;
 
     if json_output {
         println!("{}", serde_json::to_string_pretty(&analysis)?);
@@ -1037,15 +1028,16 @@ async fn run_reflect(
     let scope = project_scope(project)?;
     let manifest = scope.manifest.clone();
     let manifest_dir = scope.root.clone();
+    let interval = Interval::last_days(days);
 
     let github_summary = if let Some(r) = repo {
-        Some(ingest::github::ingest_github(r, days).await?)
+        Some(ingest::github::ingest_github(r, &interval).await?)
     } else {
         None
     };
 
     let ai_summary = {
-        let summary = ingest::ai::ingest_claude_code(Some(&scope))?;
+        let summary = ingest::ai::ingest_claude_code(Some(&scope), Some(&interval))?;
         if summary.session_count > 0 {
             Some(summary)
         } else {
@@ -1145,8 +1137,12 @@ async fn run_evaluate(
     let scope = project_scope(project)?;
     let manifest = scope.manifest.clone();
 
+    // A PR's own lifetime is the interval: sessions that overlap the time
+    // between it being opened and merged (or closed, or now if still open).
+    let interval = Interval::between(github_summary.period_start, github_summary.period_end);
+
     let ai_summary = {
-        let summary = ingest::ai::ingest_claude_code(Some(&scope))?;
+        let summary = ingest::ai::ingest_claude_code(Some(&scope), Some(&interval))?;
         if summary.session_count > 0 {
             Some(summary)
         } else {
@@ -1189,9 +1185,10 @@ async fn run_evaluate(
 
 fn run_retro(
     dir: Option<&std::path::Path>,
-    _days: u32,
+    days: u32,
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let interval = Interval::last_days(days);
     let cwd = std::env::current_dir()?;
     let reflections_dir = dir.unwrap_or_else(|| &cwd).join(".conscience").join("reflections");
 
@@ -1204,12 +1201,20 @@ fn run_retro(
     }
 
     let mut sessions = Vec::new();
+    let mut out_of_range = 0usize;
+    let mut undated = 0usize;
     for entry in std::fs::read_dir(&reflections_dir)?.flatten() {
         let path = entry.path();
         if path.extension().is_some_and(|e| e == "json") {
             match std::fs::read_to_string(&path) {
                 Ok(content) => match serde_json::from_str::<ethics::session::ReflectionSession>(&content) {
-                    Ok(session) => sessions.push(session),
+                    Ok(session) => {
+                        match session.timestamp.parse::<chrono::DateTime<chrono::Utc>>() {
+                            Ok(at) if interval.contains(at) => sessions.push(session),
+                            Ok(_) => out_of_range += 1,
+                            Err(_) => undated += 1,
+                        }
+                    }
                     Err(e) => eprintln!("Warning: skipping {}: {}", path.display(), e),
                 },
                 Err(e) => eprintln!("Warning: could not read {}: {}", path.display(), e),
@@ -1217,12 +1222,22 @@ fn run_retro(
         }
     }
 
+    eprintln!(
+        "Interval: {}; {} reflection session(s) in range, {} outside, {} undated",
+        interval.label(),
+        sessions.len(),
+        out_of_range,
+        undated
+    );
+
     if sessions.is_empty() {
-        eprintln!("No reflection sessions found in {}", reflections_dir.display());
+        eprintln!(
+            "No reflection sessions in the last {} days in {}",
+            days,
+            reflections_dir.display()
+        );
         std::process::exit(1);
     }
-
-    eprintln!("Found {} reflection session(s)", sessions.len());
 
     let aggregate = ethics::session::aggregate_sessions(&sessions);
 
@@ -1264,21 +1279,22 @@ async fn run_examine(
     project: Option<&std::path::Path>,
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Resolve the project once; the manifest, if any, comes with it.
+    // Resolve the project and the interval once; both sources share them.
     let scope = project_scope(project)?;
     let manifest = scope.manifest.clone();
     if manifest.is_some() {
         eprintln!("Loaded conscience.yaml from {}", scope.root.display());
     }
+    let interval = Interval::last_days(days);
 
     let github_summary = if let Some(r) = repo {
-        Some(ingest::github::ingest_github(r, days).await?)
+        Some(ingest::github::ingest_github(r, &interval).await?)
     } else {
         None
     };
 
     let ai_summary = {
-        let summary = ingest::ai::ingest_claude_code(Some(&scope))?;
+        let summary = ingest::ai::ingest_claude_code(Some(&scope), Some(&interval))?;
         if summary.session_count > 0 {
             Some(summary)
         } else {

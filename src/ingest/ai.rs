@@ -2,11 +2,19 @@ use crate::ai_tools::claude_code::ClaudeCodeParser;
 use crate::ai_tools::models::AiUsageSummary;
 use crate::ai_tools::parser::AiToolParser;
 use crate::error::Result;
+use crate::interval::Interval;
 use crate::project::ProjectScope;
 
-/// Ingest Claude Code sessions. `None` scans every project; `Some(scope)`
-/// restricts to the resolved project and its worktrees.
-pub fn ingest_claude_code(scope: Option<&ProjectScope>) -> Result<AiUsageSummary> {
+/// Ingest Claude Code sessions.
+///
+/// `scope`: `None` scans every project; `Some` restricts to the resolved
+/// project and its worktrees.
+/// `interval`: `None` means all time; `Some` keeps only sessions that
+/// overlap it and reports undated sessions separately.
+pub fn ingest_claude_code(
+    scope: Option<&ProjectScope>,
+    interval: Option<&Interval>,
+) -> Result<AiUsageSummary> {
     let parser = ClaudeCodeParser::new();
 
     if !parser.detect() {
@@ -24,22 +32,40 @@ pub fn ingest_claude_code(scope: Option<&ProjectScope>) -> Result<AiUsageSummary
             matched.len(),
             if matched.len() == 1 { "y" } else { "ies" }
         );
-        if !s.worktrees.is_empty() {
-            for wt in &s.worktrees {
-                eprintln!("  + worktree {}", wt.display());
-            }
+        for wt in &s.worktrees {
+            eprintln!("  + worktree {}", wt.display());
         }
     } else {
         eprintln!("Project: all Claude Code projects");
     }
 
-    let summary = parser.parse(scope)?;
+    let all = parser.parse(scope)?;
+
+    let summary = match interval {
+        Some(iv) => {
+            let restricted = all.restrict(iv);
+            eprintln!(
+                "Interval: {}; {} of {} session(s) in range{}",
+                iv.label(),
+                restricted.session_count,
+                all.session_count,
+                if restricted.undated_sessions > 0 {
+                    format!(", {} undated excluded", restricted.undated_sessions)
+                } else {
+                    String::new()
+                }
+            );
+            restricted
+        }
+        None => {
+            eprintln!("Interval: all time ({} session(s))", all.session_count);
+            all
+        }
+    };
 
     eprintln!(
         "Found {} session(s), {} total turns, {} output tokens",
-        summary.session_count,
-        summary.total_turns.total,
-        summary.total_tokens.output,
+        summary.session_count, summary.total_turns.total, summary.total_tokens.output,
     );
 
     Ok(summary)

@@ -1,4 +1,5 @@
 use crate::ethics::models::EthicalAnalysis;
+use crate::interval::Interval;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -27,9 +28,18 @@ pub struct AnalysisStats {
     pub ai_sessions: Option<u64>,
     pub total_output_tokens: Option<u64>,
     pub period_days: u32,
+    /// Explicit bounds of the interval every number above was computed over.
+    #[serde(default)]
+    pub period_start: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub period_end: Option<DateTime<Utc>>,
+    /// AI sessions with no timestamp, excluded from all totals.
+    #[serde(default)]
+    pub undated_sessions: u64,
 }
 
 impl DashboardPayload {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         project_name: String,
         github_repo: Option<String>,
@@ -37,7 +47,8 @@ impl DashboardPayload {
         analysis: EthicalAnalysis,
         ai_sessions: Option<u64>,
         total_output_tokens: Option<u64>,
-        period_days: u32,
+        undated_sessions: u64,
+        interval: &Interval,
     ) -> Self {
         let signal_count = analysis.signals.len();
         let warning_count = analysis
@@ -74,7 +85,10 @@ impl DashboardPayload {
                 principles_covered: principles,
                 ai_sessions,
                 total_output_tokens,
-                period_days,
+                period_days: interval.days(),
+                period_start: Some(interval.start),
+                period_end: Some(interval.end),
+                undated_sessions,
             },
             analysis,
         }

@@ -47,19 +47,7 @@ fn make_session_at(
 }
 
 fn make_summary(sessions: Vec<AiSession>) -> AiUsageSummary {
-    AiUsageSummary {
-        tool: AiTool::ClaudeCode,
-        session_count: sessions.len() as u64,
-        total_tokens: TokenUsage::default(),
-        total_turns: TurnCounts::default(),
-        models_used: HashMap::new(),
-        tools_used: HashMap::new(),
-        files_touched_count: 0,
-        unique_files_touched: 0,
-        all_bash_commands: Vec::new(),
-        agent_actions_summary: AgentActionsSummary::default(),
-        sessions,
-    }
+    AiUsageSummary::from_sessions(AiTool::ClaudeCode, sessions)
 }
 
 #[test]
