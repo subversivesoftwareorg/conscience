@@ -7,10 +7,63 @@ use std::io::{BufRead, Write};
 /// A saved reflection session with metadata for longitudinal tracking.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReflectionSession {
+    /// Unique per session, e.g. `20260919T093012Z-a1b2c3`. Also the default
+    /// filename stem. `None` for files saved before IDs existed, which were
+    /// named by date alone and could overwrite each other.
+    #[serde(default)]
+    pub session_id: Option<String>,
     pub timestamp: String,
     pub contributor: Option<String>,
     pub project: Option<String>,
     pub responses: Vec<ReflectionResponse>,
+}
+
+impl ReflectionSession {
+    /// Start a new session stamped with the current time and a fresh ID.
+    pub fn new(
+        contributor: Option<String>,
+        project: Option<String>,
+        responses: Vec<ReflectionResponse>,
+    ) -> Self {
+        let now = chrono::Utc::now();
+        Self {
+            session_id: Some(new_session_id(now)),
+            timestamp: now.to_rfc3339(),
+            contributor,
+            project,
+            responses,
+        }
+    }
+
+    /// Default filename for this session inside a reflections directory.
+    /// Falls back to the date for legacy records with no ID.
+    pub fn default_filename(&self) -> String {
+        match &self.session_id {
+            Some(id) => format!("{}.json", id),
+            None => format!("{}.json", &self.timestamp[..10.min(self.timestamp.len())]),
+        }
+    }
+}
+
+/// Timestamp to the second plus six hex characters of entropy drawn from
+/// the nanosecond clock and the process ID. Two sessions saved in the same
+/// second by the same person still get distinct names, without pulling in
+/// a UUID dependency for one identifier.
+fn new_session_id(now: chrono::DateTime<chrono::Utc>) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    now.timestamp_nanos_opt().unwrap_or_default().hash(&mut h);
+    std::process::id().hash(&mut h);
+    // Distinguish rapid successive calls within one process as well.
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    COUNTER
+        .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        .hash(&mut h);
+    format!(
+        "{}-{:06x}",
+        now.format("%Y%m%dT%H%M%SZ"),
+        h.finish() & 0xff_ffff
+    )
 }
 
 /// One answered (or skipped) reflection question from an interactive session.

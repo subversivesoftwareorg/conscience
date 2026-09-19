@@ -1094,19 +1094,17 @@ async fn run_reflect(
                         .map(|n| n.to_string_lossy().to_string())
                 });
 
-            let session = ethics::session::ReflectionSession {
-                timestamp: chrono::Utc::now().to_rfc3339(),
-                contributor,
-                project: project_name,
-                responses,
-            };
+            let session =
+                ethics::session::ReflectionSession::new(contributor, project_name, responses);
 
             let save_path = match path_opt {
                 Some(p) => p,
                 None => {
                     let dir = manifest_dir.join(".conscience").join("reflections");
                     std::fs::create_dir_all(&dir)?;
-                    dir.join(format!("{}.json", chrono::Utc::now().format("%Y-%m-%d")))
+                    // One file per session, never per day: two sessions on the
+                    // same day used to overwrite each other.
+                    dir.join(session.default_filename())
                 }
             };
 
