@@ -184,8 +184,10 @@ conscience digest [--days 7] [--output <path>] [--json]
 
 # Push a saved snapshot to a dashboard server. examine writes a snapshot to
 # .conscience/snapshots/ on every run; push uploads the latest one (or the
-# given id/prefix/path) without re-running analysis.
-conscience push [<snapshot-id>] [--project <path>] [--endpoint <url>]
+# given id/prefix/path) without re-running analysis. Only an allowlisted
+# export leaves the machine (no paths, commands, or names in evidence);
+# --show prints exactly what would be sent and sends nothing.
+conscience push [<snapshot-id>] [--project <path>] [--endpoint <url>] [--show]
 
 # Token retrospective: where did the budget go across recent sessions?
 conscience retro-tokens [--hours 4] [--project <path>] [--json]

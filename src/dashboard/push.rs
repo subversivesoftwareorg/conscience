@@ -1,9 +1,12 @@
-use crate::dashboard::models::DashboardPayload;
 use crate::error::{ConscienceError, Result};
+use crate::export::SnapshotExport;
 
-pub async fn push_analysis(
+/// Send an allowlisted export to the dashboard. This is the only function
+/// that talks to the server, and it accepts only the export type, so raw
+/// snapshots or analyses cannot be uploaded by accident.
+pub async fn push_export(
     endpoint: &str,
-    payload: &DashboardPayload,
+    payload: &SnapshotExport,
     api_key: Option<&str>,
 ) -> Result<()> {
     let client = reqwest::Client::new();
@@ -22,7 +25,10 @@ pub async fn push_analysis(
 
     let status = response.status();
     if status.is_success() {
-        eprintln!("Pushed analysis to {} ({})", url, status);
+        eprintln!(
+            "Pushed snapshot {} to {} ({})",
+            payload.snapshot_id, url, status
+        );
         Ok(())
     } else {
         let body = response.text().await.unwrap_or_default();

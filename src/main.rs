@@ -4,6 +4,7 @@ use conscience::analysis;
 use conscience::config::Config;
 use conscience::dashboard;
 use conscience::ethics;
+use conscience::export::SnapshotExport;
 use conscience::ingest;
 use conscience::interval::Interval;
 use conscience::pipeline;
@@ -98,6 +99,9 @@ enum Commands {
         /// Dashboard endpoint URL (overrides config)
         #[arg(long)]
         endpoint: Option<String>,
+        /// Print exactly what would be sent, as JSON, and do not send it
+        #[arg(long)]
+        show: bool,
     },
     /// Generate reflection questions for a team retrospective
     Reflect {
@@ -301,7 +305,8 @@ async fn main() {
             snapshot,
             project,
             endpoint,
-        } => run_push(snapshot.as_deref(), project.as_deref(), endpoint.as_deref()).await,
+            show,
+        } => run_push(snapshot.as_deref(), project.as_deref(), endpoint.as_deref(), show).await,
         Commands::Setup => run_setup(),
         Commands::Evaluate { pr, project, json } => {
             run_evaluate(&pr, project.as_deref(), json).await
@@ -633,18 +638,9 @@ async fn run_push(
     snapshot_ref: Option<&str>,
     project: Option<&std::path::Path>,
     endpoint_override: Option<&str>,
+    show: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::load();
-    let endpoint = endpoint_override
-        .map(|s| s.to_string())
-        .or_else(|| std::env::var("CONSCIENCE_DASHBOARD_URL").ok())
-        .or(config.dashboard.endpoint)
-        .ok_or("No dashboard endpoint. Set --endpoint, CONSCIENCE_DASHBOARD_URL, or configure in ~/.conscience/config.toml")?;
-
-    let api_key = std::env::var("CONSCIENCE_DASHBOARD_API_KEY")
-        .ok()
-        .or(config.dashboard.api_key);
-
     let scope = project_scope(project)?;
 
     // Push never re-runs analysis: it uploads a snapshot the user has already
@@ -668,8 +664,27 @@ async fn run_push(
         humanize_age(age)
     );
 
-    let payload = dashboard::models::DashboardPayload::from_snapshot(&snapshot);
-    dashboard::push::push_analysis(&endpoint, &payload, api_key.as_deref()).await?;
+    // Only the allowlisted export ever leaves the machine.
+    let export = SnapshotExport::from_snapshot(&snapshot);
+    eprintln!("  Sanitized: {}", export.sanitization.summary());
+
+    if show {
+        println!("{}", serde_json::to_string_pretty(&export)?);
+        eprintln!("(--show: nothing was sent)");
+        return Ok(());
+    }
+
+    let endpoint = endpoint_override
+        .map(|s| s.to_string())
+        .or_else(|| std::env::var("CONSCIENCE_DASHBOARD_URL").ok())
+        .or(config.dashboard.endpoint)
+        .ok_or("No dashboard endpoint. Set --endpoint, CONSCIENCE_DASHBOARD_URL, or configure in ~/.conscience/config.toml")?;
+
+    let api_key = std::env::var("CONSCIENCE_DASHBOARD_API_KEY")
+        .ok()
+        .or(config.dashboard.api_key);
+
+    dashboard::push::push_export(&endpoint, &export, api_key.as_deref()).await?;
 
     Ok(())
 }
