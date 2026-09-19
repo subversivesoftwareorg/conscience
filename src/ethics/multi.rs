@@ -1,11 +1,9 @@
 use crate::ai_tools::claude_code::ClaudeCodeParser;
 use crate::ai_tools::parser::AiToolParser;
 use crate::error::Result;
-use crate::ethics;
-use crate::ethics::manifest::Manifest;
 use crate::ethics::models::*;
-use crate::ingest;
 use crate::interval::Interval;
+use crate::pipeline;
 use crate::project::{resolve_project, ProjectScope};
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -38,35 +36,23 @@ pub async fn analyze_all_projects(interval: &Interval) -> Result<MultiProjectAna
             Ok(s) => s,
             Err(_) => ProjectScope::from_root(path.clone()),
         };
-        let manifest: Option<Manifest> = scope.manifest.clone();
         let project_name = scope.display_name();
+        let repo = scope.manifest.as_ref().and_then(|m| m.github.repo.clone());
 
-        let ai_summary = match ingest::ai::ingest_claude_code(Some(&scope), Some(interval)) {
-            Ok(s) if s.session_count > 0 => s,
-            _ => continue,
+        // Same pipeline as examine, so every row is a real assessment with
+        // coverage. Snapshots are not persisted here: that would write into
+        // other repositories' directories.
+        let collected = pipeline::collect(pipeline::CollectRequest {
+            scope: &scope,
+            interval: *interval,
+            repo: repo.as_deref(),
+            pr: None,
+        })
+        .await?;
+
+        let Some(ai_summary) = collected.ai.as_ref() else {
+            continue;
         };
-
-        let github_summary = if let Some(ref m) = manifest {
-            if let Some(ref repo) = m.github.repo {
-                match ingest::github::ingest_github(repo, interval).await {
-                    Ok(s) => Some(s),
-                    Err(e) => {
-                        eprintln!("  Warning: failed to fetch GitHub data for {}: {}", repo, e);
-                        None
-                    }
-                }
-            } else {
-                None
-            }
-        } else {
-            None
-        };
-
-        let analysis = ethics::analyze(
-            github_summary.as_ref(),
-            Some(&ai_summary),
-            manifest.as_ref(),
-        );
 
         let ai_human_ratio = if ai_summary.total_turns.human > 0 {
             ai_summary.total_turns.assistant as f64 / ai_summary.total_turns.human as f64
@@ -77,19 +63,29 @@ pub async fn analyze_all_projects(interval: &Interval) -> Result<MultiProjectAna
         total_sessions += ai_summary.session_count;
         total_output_tokens += ai_summary.total_tokens.output;
 
-        let agent_dispatches: u64 = ai_summary.sessions.iter()
+        let session_count = ai_summary.session_count;
+        let output_tokens = ai_summary.total_tokens.output;
+        let agent_dispatches: u64 = ai_summary
+            .sessions
+            .iter()
             .map(|s| s.agent_dispatches.len() as u64)
             .sum();
-        let skill_invocations: u64 = ai_summary.sessions.iter()
+        let skill_invocations: u64 = ai_summary
+            .sessions
+            .iter()
             .map(|s| s.skill_invocations.len() as u64)
             .sum();
+
+        let snapshot = pipeline::analyze(&scope, collected);
 
         projects.push(ProjectAnalysis {
             project_path: project_path.clone(),
             project_name: Some(project_name),
-            analysis,
-            session_count: ai_summary.session_count,
-            total_output_tokens: ai_summary.total_tokens.output,
+            snapshot_id: Some(snapshot.snapshot_id.clone()),
+            coverage: Some(snapshot.coverage.clone()),
+            analysis: snapshot.analysis,
+            session_count,
+            total_output_tokens: output_tokens,
             ai_human_ratio,
             agent_dispatches,
             skill_invocations,

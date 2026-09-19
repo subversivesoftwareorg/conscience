@@ -182,8 +182,10 @@ conscience examine-all [--days 30] [--json]
 # Weekly digest: Markdown summary of signal trends across all projects
 conscience digest [--days 7] [--output <path>] [--json]
 
-# Push results to a dashboard server
-conscience push --repo <owner/repo> --project <path> [--endpoint <url>]
+# Push a saved snapshot to a dashboard server. examine writes a snapshot to
+# .conscience/snapshots/ on every run; push uploads the latest one (or the
+# given id/prefix/path) without re-running analysis.
+conscience push [<snapshot-id>] [--project <path>] [--endpoint <url>]
 
 # Token retrospective: where did the budget go across recent sessions?
 conscience retro-tokens [--hours 4] [--project <path>] [--json]

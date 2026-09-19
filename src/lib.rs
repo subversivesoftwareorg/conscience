@@ -7,5 +7,7 @@ pub mod ethics;
 pub mod github;
 pub mod ingest;
 pub mod interval;
+pub mod pipeline;
 pub mod project;
 pub mod report;
+pub mod snapshot;

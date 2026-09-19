@@ -6,7 +6,9 @@ use conscience::dashboard;
 use conscience::ethics;
 use conscience::ingest;
 use conscience::interval::Interval;
+use conscience::pipeline;
 use conscience::project::{self, ProjectScope};
+use conscience::snapshot::Snapshot;
 use conscience::report;
 use std::path::{Path, PathBuf};
 
@@ -86,14 +88,10 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
-    /// Push analysis results to a dashboard server
+    /// Push a saved snapshot to a dashboard server (run `examine` first)
     Push {
-        /// GitHub repository (owner/repo)
-        #[arg(long)]
-        repo: Option<String>,
-        /// Number of days to look back
-        #[arg(long, default_value = "30")]
-        days: u32,
+        /// Snapshot id (or unique prefix) or path; defaults to the latest for the project
+        snapshot: Option<String>,
         /// Project directory
         #[arg(long)]
         project: Option<PathBuf>,
@@ -300,11 +298,10 @@ async fn main() {
         }
         Commands::ExamineAll { days, json } => run_examine_all(days, json).await,
         Commands::Push {
-            repo,
-            days,
+            snapshot,
             project,
             endpoint,
-        } => run_push(repo.as_deref(), days, project.as_deref(), endpoint.as_deref()).await,
+        } => run_push(snapshot.as_deref(), project.as_deref(), endpoint.as_deref()).await,
         Commands::Setup => run_setup(),
         Commands::Evaluate { pr, project, json } => {
             run_evaluate(&pr, project.as_deref(), json).await
@@ -633,8 +630,7 @@ async fn run_attention(
 }
 
 async fn run_push(
-    repo: Option<&str>,
-    days: u32,
+    snapshot_ref: Option<&str>,
     project: Option<&std::path::Path>,
     endpoint_override: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -650,46 +646,43 @@ async fn run_push(
         .or(config.dashboard.api_key);
 
     let scope = project_scope(project)?;
-    let manifest = scope.manifest.clone();
-    let interval = Interval::last_days(days);
 
-    let github_summary = if let Some(r) = repo {
-        Some(ingest::github::ingest_github(r, &interval).await?)
-    } else {
-        None
+    // Push never re-runs analysis: it uploads a snapshot the user has already
+    // been able to inspect, so what lands on the dashboard is exactly what
+    // examine showed.
+    let (path, snapshot) = match snapshot_ref {
+        Some(r) => Snapshot::find(&scope.root, r)?,
+        None => Snapshot::latest(&scope.root)?.ok_or_else(|| {
+            format!(
+                "No snapshots under {}. Run `conscience examine` first, then push.",
+                Snapshot::dir_for(&scope.root).display()
+            )
+        })?,
     };
 
-    let ai_summary = {
-        let summary = ingest::ai::ingest_claude_code(Some(&scope), Some(&interval))?;
-        if summary.session_count > 0 {
-            Some(summary)
-        } else {
-            None
-        }
-    };
-
-    let analysis = ethics::analyze(
-        github_summary.as_ref(),
-        ai_summary.as_ref(),
-        manifest.as_ref(),
+    let age = chrono::Utc::now() - snapshot.interval.collected_at;
+    eprintln!("{}", snapshot.summary());
+    eprintln!(
+        "  File:     {} (collected {} ago)",
+        path.display(),
+        humanize_age(age)
     );
 
-    let project_name = scope.display_name();
-
-    let payload = dashboard::models::DashboardPayload::new(
-        project_name,
-        repo.map(|s| s.to_string()),
-        Some(scope.root.to_string_lossy().to_string()),
-        analysis,
-        ai_summary.as_ref().map(|s| s.session_count),
-        ai_summary.as_ref().map(|s| s.total_tokens.output),
-        ai_summary.as_ref().map(|s| s.undated_sessions).unwrap_or(0),
-        &interval,
-    );
-
+    let payload = dashboard::models::DashboardPayload::from_snapshot(&snapshot);
     dashboard::push::push_analysis(&endpoint, &payload, api_key.as_deref()).await?;
 
     Ok(())
+}
+
+fn humanize_age(age: chrono::Duration) -> String {
+    let mins = age.num_minutes();
+    if mins < 60 {
+        format!("{} min", mins.max(0))
+    } else if mins < 60 * 48 {
+        format!("{} h", mins / 60)
+    } else {
+        format!("{} days", mins / (60 * 24))
+    }
 }
 
 fn run_retro_tokens(
@@ -1028,22 +1021,18 @@ async fn run_reflect(
     let scope = project_scope(project)?;
     let manifest = scope.manifest.clone();
     let manifest_dir = scope.root.clone();
-    let interval = Interval::last_days(days);
 
-    let github_summary = if let Some(r) = repo {
-        Some(ingest::github::ingest_github(r, &interval).await?)
-    } else {
-        None
-    };
-
-    let ai_summary = {
-        let summary = ingest::ai::ingest_claude_code(Some(&scope), Some(&interval))?;
-        if summary.session_count > 0 {
-            Some(summary)
-        } else {
-            None
-        }
-    };
+    // Same collection as examine, but reflect does not write a snapshot:
+    // it is a conversation aid, not an assessment on the record.
+    let collected = pipeline::collect(pipeline::CollectRequest {
+        scope: &scope,
+        interval: Interval::last_days(days),
+        repo,
+        pr: None,
+    })
+    .await?;
+    let github_summary = collected.github;
+    let ai_summary = collected.ai;
 
     // Unlike examine, reflect is useful with no data at all — the
     // questions stand on their own, data only enriches them.
@@ -1130,37 +1119,31 @@ async fn run_evaluate(
     project: Option<&std::path::Path>,
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let github_summary = ingest::github::ingest_pr(pr_url).await?;
-
     let scope = project_scope(project)?;
-    let manifest = scope.manifest.clone();
 
-    // A PR's own lifetime is the interval: sessions that overlap the time
-    // between it being opened and merged (or closed, or now if still open).
-    let interval = Interval::between(github_summary.period_start, github_summary.period_end);
+    // The pipeline uses the PR's own lifetime as the interval: sessions that
+    // overlap the time between it being opened and merged (or closed, or now).
+    let collected = pipeline::collect(pipeline::CollectRequest {
+        scope: &scope,
+        interval: Interval::last_days(30), // replaced by the PR window
+        repo: None,
+        pr: Some(pr_url),
+    })
+    .await?;
 
-    let ai_summary = {
-        let summary = ingest::ai::ingest_claude_code(Some(&scope), Some(&interval))?;
-        if summary.session_count > 0 {
-            Some(summary)
-        } else {
-            None
-        }
+    let Some(github) = collected.github.as_ref() else {
+        let why = collected
+            .coverage
+            .source("github")
+            .map(|s| s.detail.clone())
+            .unwrap_or_default();
+        return Err(format!("Could not fetch the pull request: {}", why).into());
     };
 
-    let analysis = ethics::analyze(
-        Some(&github_summary),
-        ai_summary.as_ref(),
-        manifest.as_ref(),
-    );
-
-    let pr = &github_summary.pull_requests[0];
     if !json_output {
+        let pr = &github.pull_requests[0];
         println!();
-        println!(
-            "  Conscience \u{2014} PR #{}: \"{}\"",
-            pr.number, pr.title
-        );
+        println!("  Conscience \u{2014} PR #{}: \"{}\"", pr.number, pr.title);
         println!(
             "  by {} | +{}/\u{2212}{} | {} files | {} review comments",
             pr.author,
@@ -1171,11 +1154,15 @@ async fn run_evaluate(
         );
     }
 
+    let snapshot = pipeline::analyze(&scope, collected);
+    let saved = snapshot.save(&scope.root)?;
+    eprintln!("{}", snapshot.summary());
+    eprintln!("  Saved:    {}", saved.display());
+
     if json_output {
-        let output = serde_json::to_string_pretty(&analysis)?;
-        println!("{}", output);
+        println!("{}", serde_json::to_string_pretty(&snapshot)?);
     } else {
-        ethics::report::print_ethical_analysis(&analysis);
+        ethics::report::print_ethical_analysis(&snapshot.analysis);
     }
 
     Ok(())
@@ -1279,43 +1266,35 @@ async fn run_examine(
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Resolve the project and the interval once; both sources share them.
     let scope = project_scope(project)?;
-    let manifest = scope.manifest.clone();
-    if manifest.is_some() {
+    if scope.manifest.is_some() {
         eprintln!("Loaded conscience.yaml from {}", scope.root.display());
     }
-    let interval = Interval::last_days(days);
 
-    let github_summary = if let Some(r) = repo {
-        Some(ingest::github::ingest_github(r, &interval).await?)
-    } else {
-        None
-    };
+    let collected = pipeline::collect(pipeline::CollectRequest {
+        scope: &scope,
+        interval: Interval::last_days(days),
+        repo,
+        pr: None,
+    })
+    .await?;
 
-    let ai_summary = {
-        let summary = ingest::ai::ingest_claude_code(Some(&scope), Some(&interval))?;
-        if summary.session_count > 0 {
-            Some(summary)
-        } else {
-            None
-        }
-    };
-
-    if github_summary.is_none() && ai_summary.is_none() {
+    if collected.github.is_none() && collected.ai.is_none() {
         eprintln!("No data sources available. Provide --repo and/or --project.");
+        eprintln!("Coverage: {}", collected.coverage.summary());
         std::process::exit(1);
     }
 
-    let analysis = ethics::analyze(
-        github_summary.as_ref(),
-        ai_summary.as_ref(),
-        manifest.as_ref(),
-    );
+    // Every examine writes a snapshot: it is the record push uploads and
+    // history compares, and it is local (.conscience/ is gitignored).
+    let snapshot = pipeline::analyze(&scope, collected);
+    let saved = snapshot.save(&scope.root)?;
+    eprintln!("{}", snapshot.summary());
+    eprintln!("  Saved:    {}", saved.display());
 
     if json_output {
-        let output = serde_json::to_string_pretty(&analysis)?;
-        println!("{}", output);
+        println!("{}", serde_json::to_string_pretty(&snapshot)?);
     } else {
-        ethics::report::print_ethical_analysis(&analysis);
+        ethics::report::print_ethical_analysis(&snapshot.analysis);
     }
 
     Ok(())

@@ -1,8 +1,11 @@
 use crate::ethics::models::EthicalAnalysis;
-use crate::interval::Interval;
+use crate::snapshot::{AnalyzerInfo, Coverage, Metric, Snapshot};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+/// What `push` sends. Version 1 shape kept intact for the existing
+/// dashboard; snapshot identity, analyzer, coverage, and metrics are
+/// additive. The allowlisted, sanitized export is roadmap #378.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DashboardPayload {
     pub version: String,
@@ -10,6 +13,16 @@ pub struct DashboardPayload {
     pub project: ProjectIdentifier,
     pub analysis: EthicalAnalysis,
     pub stats: AnalysisStats,
+    #[serde(default)]
+    pub snapshot_id: Option<String>,
+    #[serde(default)]
+    pub project_id: Option<String>,
+    #[serde(default)]
+    pub analyzer: Option<AnalyzerInfo>,
+    #[serde(default)]
+    pub coverage: Option<Coverage>,
+    #[serde(default)]
+    pub metrics: Vec<Metric>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,28 +52,12 @@ pub struct AnalysisStats {
 }
 
 impl DashboardPayload {
-    #[allow(clippy::too_many_arguments)]
-    pub fn new(
-        project_name: String,
-        github_repo: Option<String>,
-        project_path: Option<String>,
-        analysis: EthicalAnalysis,
-        ai_sessions: Option<u64>,
-        total_output_tokens: Option<u64>,
-        undated_sessions: u64,
-        interval: &Interval,
-    ) -> Self {
+    /// Build the payload from an inspected snapshot. Nothing is recomputed.
+    pub fn from_snapshot(snapshot: &Snapshot) -> Self {
+        let analysis = snapshot.analysis.clone();
         let signal_count = analysis.signals.len();
-        let warning_count = analysis
-            .signals
-            .iter()
-            .filter(|s| s.severity == crate::ethics::models::Severity::Warning)
-            .count();
-        let concern_count = analysis
-            .signals
-            .iter()
-            .filter(|s| s.severity == crate::ethics::models::Severity::Concern)
-            .count();
+        let warning_count = snapshot.signal_count(crate::ethics::models::Severity::Warning);
+        let concern_count = snapshot.signal_count(crate::ethics::models::Severity::Concern);
 
         let mut principles: Vec<String> = analysis
             .scorecard
@@ -70,13 +67,16 @@ impl DashboardPayload {
             .collect();
         principles.dedup();
 
+        let ai_sessions = snapshot.metric("ai.sessions").map(|m| m.value as u64);
+        let total_output_tokens = snapshot.metric("ai.output_tokens").map(|m| m.value as u64);
+
         Self {
-            version: "1.0".to_string(),
-            timestamp: Utc::now(),
+            version: "1.1".to_string(),
+            timestamp: snapshot.interval.collected_at,
             project: ProjectIdentifier {
-                name: project_name,
-                github_repo,
-                project_path,
+                name: snapshot.project.name.clone(),
+                github_repo: snapshot.project.github_repo.clone(),
+                project_path: Some(snapshot.project.root.clone()),
             },
             stats: AnalysisStats {
                 signal_count,
@@ -85,12 +85,17 @@ impl DashboardPayload {
                 principles_covered: principles,
                 ai_sessions,
                 total_output_tokens,
-                period_days: interval.days(),
-                period_start: Some(interval.start),
-                period_end: Some(interval.end),
-                undated_sessions,
+                period_days: snapshot.interval.days(),
+                period_start: Some(snapshot.interval.start),
+                period_end: Some(snapshot.interval.end),
+                undated_sessions: snapshot.coverage.ai_sessions_undated,
             },
             analysis,
+            snapshot_id: Some(snapshot.snapshot_id.clone()),
+            project_id: Some(snapshot.project.id.clone()),
+            analyzer: Some(snapshot.analyzer.clone()),
+            coverage: Some(snapshot.coverage.clone()),
+            metrics: snapshot.metrics.clone(),
         }
     }
 }

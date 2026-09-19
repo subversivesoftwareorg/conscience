@@ -69,6 +69,12 @@ impl Principle {
 pub struct ProjectAnalysis {
     pub project_path: String,
     pub project_name: Option<String>,
+    /// ID of the snapshot this row was derived from (not persisted by
+    /// examine-all, but it identifies the assessment).
+    #[serde(default)]
+    pub snapshot_id: Option<String>,
+    #[serde(default)]
+    pub coverage: Option<crate::snapshot::Coverage>,
     pub analysis: EthicalAnalysis,
     pub session_count: u64,
     pub total_output_tokens: u64,
