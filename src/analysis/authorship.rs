@@ -154,6 +154,7 @@ fn generate_authorship_signals(
 
     if overall_pct > 80.0 {
         signals.push(Signal {
+            id: "authorship_ai_correlation_very_high".to_string(),
             principle: Principle::HumanAgency,
             severity: Severity::Warning,
             title: "Very high AI authorship correlation".to_string(),
@@ -166,6 +167,7 @@ fn generate_authorship_signals(
         });
     } else if overall_pct > 50.0 {
         signals.push(Signal {
+            id: "authorship_ai_correlation_majority".to_string(),
             principle: Principle::HumanAgency,
             severity: Severity::Info,
             title: "Majority of commits AI-correlated".to_string(),
@@ -182,6 +184,7 @@ fn generate_authorship_signals(
     for contributor in contributors {
         if contributor.ai_correlation_pct > 90.0 && contributor.total_commits > 3 {
             signals.push(Signal {
+                id: "authorship_contributor_near_total_ai".to_string(),
                 principle: Principle::DeveloperGrowth,
                 severity: Severity::Concern,
                 title: format!("{}: near-total AI authorship", contributor.author),

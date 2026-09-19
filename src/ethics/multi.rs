@@ -154,6 +154,7 @@ fn detect_cross_project_outliers(projects: &[ProjectAnalysis]) -> Vec<Signal> {
             let share = project.total_output_tokens as f64 / total_tokens as f64;
             if share > 0.5 && projects.len() > 2 {
                 signals.push(Signal {
+                    id: "multi_token_concentration".to_string(),
                     principle: Principle::EnvironmentalCost,
                     severity: Severity::Info,
                     title: "Token concentration across projects".to_string(),
@@ -180,6 +181,7 @@ fn detect_cross_project_outliers(projects: &[ProjectAnalysis]) -> Vec<Signal> {
         .max_by(|a, b| a.ai_human_ratio.partial_cmp(&b.ai_human_ratio).unwrap())
     {
         signals.push(Signal {
+            id: "multi_ai_turn_ratio_highest".to_string(),
             principle: Principle::HumanAgency,
             severity: Severity::Concern,
             title: "Highest AI dependency".to_string(),
@@ -203,6 +205,7 @@ fn detect_cross_project_outliers(projects: &[ProjectAnalysis]) -> Vec<Signal> {
 
         if security_warnings > 3 {
             signals.push(Signal {
+                id: "multi_security_warnings".to_string(),
                 principle: Principle::Security,
                 severity: Severity::Warning,
                 title: "Multiple security warnings".to_string(),
@@ -223,6 +226,7 @@ fn detect_cross_project_outliers(projects: &[ProjectAnalysis]) -> Vec<Signal> {
         .max_by_key(|p| p.agent_dispatches)
     {
         signals.push(Signal {
+            id: "multi_agent_orchestration_highest".to_string(),
             principle: Principle::HumanAgency,
             severity: Severity::Info,
             title: "Highest agent orchestration".to_string(),

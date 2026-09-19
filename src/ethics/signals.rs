@@ -50,6 +50,7 @@ pub fn detect_manifest_signals(manifest: &Manifest) -> Vec<Signal> {
     let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
     if manifest.monthly_review.is_stale(&today) {
         signals.push(Signal {
+            id: "manifest_review_stale".to_string(),
             principle: Principle::Transparency,
             severity: Severity::Concern,
             title: "Monthly review is stale".to_string(),
@@ -68,6 +69,7 @@ pub fn detect_manifest_signals(manifest: &Manifest) -> Vec<Signal> {
 
     if manifest.project.beneficiaries.is_empty() {
         signals.push(Signal {
+            id: "manifest_no_beneficiaries".to_string(),
             principle: Principle::EquityOfBenefit,
             severity: Severity::Info,
             title: "No beneficiaries defined".to_string(),
@@ -80,6 +82,7 @@ pub fn detect_manifest_signals(manifest: &Manifest) -> Vec<Signal> {
 
     if !manifest.monthly_review.value_delivered.is_empty() {
         signals.push(Signal {
+            id: "manifest_value_documented".to_string(),
             principle: Principle::Transparency,
             severity: Severity::Healthy,
             title: "Value delivery documented".to_string(),
@@ -111,6 +114,7 @@ pub fn detect_manifest_signals(manifest: &Manifest) -> Vec<Signal> {
             _ => (Severity::Info, "AI sentiment recorded."),
         };
         signals.push(Signal {
+            id: "manifest_ai_sentiment".to_string(),
             principle: Principle::HumanAgency,
             severity,
             title: "AI sentiment self-assessment".to_string(),
@@ -121,6 +125,7 @@ pub fn detect_manifest_signals(manifest: &Manifest) -> Vec<Signal> {
 
     if manifest.team.roles.junior > 0 && manifest.team.learning_goals.is_empty() {
         signals.push(Signal {
+            id: "manifest_juniors_no_learning_goals".to_string(),
             principle: Principle::DeveloperGrowth,
             severity: Severity::Info,
             title: "Junior developers without learning goals".to_string(),
@@ -158,6 +163,7 @@ fn detect_contribution_concentration(
     if num_authors < 2 {
         if total > 5 {
             signals.push(Signal {
+                id: "github_single_contributor".to_string(),
                 principle: Principle::EquityOfBenefit,
                 severity: Severity::Concern,
                 title: "Single contributor".to_string(),
@@ -180,6 +186,7 @@ fn detect_contribution_concentration(
 
     if concentration > thresholds.contribution_concentration_warn && num_authors > 3 {
         signals.push(Signal {
+            id: "github_contribution_concentration_high".to_string(),
             principle: Principle::EquityOfBenefit,
             severity: Severity::Warning,
             title: "High contribution concentration".to_string(),
@@ -193,6 +200,7 @@ fn detect_contribution_concentration(
         });
     } else if concentration > thresholds.contribution_concentration_concern && num_authors > 3 {
         signals.push(Signal {
+            id: "github_contribution_concentration_moderate".to_string(),
             principle: Principle::EquityOfBenefit,
             severity: Severity::Info,
             title: "Moderate contribution concentration".to_string(),
@@ -205,6 +213,7 @@ fn detect_contribution_concentration(
         });
     } else {
         signals.push(Signal {
+            id: "github_contributions_distributed".to_string(),
             principle: Principle::EquityOfBenefit,
             severity: Severity::Healthy,
             title: "Distributed contributions".to_string(),
@@ -245,6 +254,7 @@ fn detect_review_patterns(summary: &RepoSummary, signals: &mut Vec<Signal>) {
 
     if no_review_pct > 0.5 && merged.len() > 3 {
         signals.push(Signal {
+            id: "github_review_engagement_low".to_string(),
             principle: Principle::HumanAgency,
             severity: Severity::Concern,
             title: "Low review engagement".to_string(),
@@ -268,6 +278,7 @@ fn detect_review_patterns(summary: &RepoSummary, signals: &mut Vec<Signal>) {
 
     if fast_merges.len() > 3 {
         signals.push(Signal {
+            id: "github_merge_time_fast".to_string(),
             principle: Principle::HumanAgency,
             severity: Severity::Info,
             title: "Very fast merge times".to_string(),
@@ -297,6 +308,7 @@ fn detect_velocity_signals(summary: &RepoSummary, signals: &mut Vec<Signal>) {
 
     if prs_per_week > 0.0 {
         signals.push(Signal {
+            id: "github_velocity_baseline".to_string(),
             principle: Principle::Transparency,
             severity: Severity::Info,
             title: "Velocity baseline".to_string(),
@@ -329,6 +341,7 @@ fn detect_ai_dependency(
 
     if ratio > thresholds.ai_dependency_concern {
         signals.push(Signal {
+            id: "ai_turn_ratio_high".to_string(),
             principle: Principle::HumanAgency,
             severity: Severity::Concern,
             title: "High AI:Human turn ratio".to_string(),
@@ -344,6 +357,7 @@ fn detect_ai_dependency(
         });
     } else if ratio > thresholds.ai_dependency_info {
         signals.push(Signal {
+            id: "ai_turn_ratio_moderate".to_string(),
             principle: Principle::HumanAgency,
             severity: Severity::Info,
             title: "Moderate AI:Human turn ratio".to_string(),
@@ -355,6 +369,7 @@ fn detect_ai_dependency(
         });
     } else if summary.total_turns.total > 0 {
         signals.push(Signal {
+            id: "ai_turn_ratio_balanced".to_string(),
             principle: Principle::HumanAgency,
             severity: Severity::Healthy,
             title: "Balanced AI:Human interaction".to_string(),
@@ -378,6 +393,7 @@ fn detect_ai_dependency(
         let write_ratio = write_ops as f64 / total_file_ops as f64;
         if write_ratio > 0.6 && write_ops > 10 {
             signals.push(Signal {
+                id: "ai_new_file_ratio_high".to_string(),
                 principle: Principle::CodeProvenance,
                 severity: Severity::Info,
                 title: "High ratio of new file creation".to_string(),
@@ -405,6 +421,7 @@ fn detect_token_consumption(summary: &AiUsageSummary, signals: &mut Vec<Signal>)
         let est = crate::analysis::energy::estimate_total_energy(&summary.sessions, &energy_config);
 
         signals.push(Signal {
+            id: "ai_token_consumption_high".to_string(),
             principle: Principle::EnvironmentalCost,
             severity: Severity::Info,
             title: "Significant token consumption".to_string(),
@@ -440,6 +457,7 @@ fn detect_token_consumption(summary: &AiUsageSummary, signals: &mut Vec<Signal>)
         let cache_efficiency = cache_read as f64 / (cache_read + cache_create) as f64;
         if cache_efficiency > 0.8 {
             signals.push(Signal {
+                id: "ai_cache_efficiency_good".to_string(),
                 principle: Principle::EnvironmentalCost,
                 severity: Severity::Healthy,
                 title: "Good cache efficiency".to_string(),
@@ -471,6 +489,7 @@ fn detect_tool_patterns(summary: &AiUsageSummary, signals: &mut Vec<Signal>) {
 
     if total_tools > 0 && bash_count as f64 / total_tools as f64 > 0.5 {
         signals.push(Signal {
+            id: "ai_bash_volume_high".to_string(),
             principle: Principle::Transparency,
             severity: Severity::Info,
             title: "AI executing many shell commands".to_string(),
@@ -512,6 +531,7 @@ fn detect_tool_patterns(summary: &AiUsageSummary, signals: &mut Vec<Signal>) {
             format!("{} agent dispatches detected.", agent_count)
         };
         signals.push(Signal {
+            id: "ai_agent_orchestration_heavy".to_string(),
             principle: Principle::HumanAgency,
             severity: if agent_count > 20 { Severity::Concern } else { Severity::Info },
             title: "Heavy agent orchestration".to_string(),
@@ -572,6 +592,7 @@ fn detect_tokenmaxxing(
                 String::new()
             };
             signals.push(Signal {
+                id: "ai_tokens_per_file_high".to_string(),
                 principle: Principle::Security,
                 severity: if session.agent_dispatches.is_empty() {
                     Severity::Concern
@@ -600,6 +621,7 @@ fn detect_tokenmaxxing(
         if let Some(tokens_per_turn) = session.tokens.output.checked_div(session.turns.assistant) {
             if tokens_per_turn > thresholds.tokens_per_turn_warn {
                 signals.push(Signal {
+                    id: "ai_tokens_per_turn_high".to_string(),
                     principle: Principle::Security,
                     severity: Severity::Info,
                     title: "High tokens per turn".to_string(),
@@ -622,6 +644,7 @@ fn detect_tokenmaxxing(
             let duration_hours = (end - start).num_minutes() as f64 / 60.0;
             if duration_hours > thresholds.max_session_hours {
                 signals.push(Signal {
+                    id: "ai_session_length_extreme".to_string(),
                     principle: Principle::Security,
                     severity: Severity::Warning,
                     title: "Extremely long AI session".to_string(),
@@ -666,6 +689,7 @@ fn detect_sensitive_file_access(summary: &AiUsageSummary, signals: &mut Vec<Sign
 
     if !sensitive_writes.is_empty() {
         signals.push(Signal {
+            id: "security_sensitive_file_write".to_string(),
             principle: Principle::Security,
             severity: Severity::Warning,
             title: "AI wrote to sensitive files".to_string(),
@@ -680,6 +704,7 @@ fn detect_sensitive_file_access(summary: &AiUsageSummary, signals: &mut Vec<Sign
 
     if !sensitive_reads.is_empty() {
         signals.push(Signal {
+            id: "security_sensitive_file_read".to_string(),
             principle: Principle::Security,
             severity: Severity::Concern,
             title: "AI read sensitive files".to_string(),
@@ -728,6 +753,7 @@ fn detect_suspicious_bash(summary: &AiUsageSummary, signals: &mut Vec<Signal>) {
 
     if !network_exfil.is_empty() {
         signals.push(Signal {
+            id: "security_network_exfiltration".to_string(),
             principle: Principle::Security,
             severity: Severity::Warning,
             title: "Potential network exfiltration".to_string(),
@@ -742,6 +768,7 @@ fn detect_suspicious_bash(summary: &AiUsageSummary, signals: &mut Vec<Signal>) {
 
     if !encoding_ops.is_empty() {
         signals.push(Signal {
+            id: "security_encoding_obfuscation".to_string(),
             principle: Principle::Security,
             severity: Severity::Concern,
             title: "Encoding/obfuscation commands".to_string(),
@@ -756,6 +783,7 @@ fn detect_suspicious_bash(summary: &AiUsageSummary, signals: &mut Vec<Signal>) {
 
     if !credential_access.is_empty() {
         signals.push(Signal {
+            id: "security_credential_access".to_string(),
             principle: Principle::Security,
             severity: Severity::Concern,
             title: "AI accessed credential directories".to_string(),
@@ -783,6 +811,7 @@ fn detect_agent_action_concerns(summary: &AiUsageSummary, signals: &mut Vec<Sign
             Severity::Concern
         };
         signals.push(Signal {
+            id: "agent_actions_unapproved".to_string(),
             principle: Principle::HumanAgency,
             severity,
             title: "Agent actions without human approval".to_string(),
@@ -802,6 +831,7 @@ fn detect_agent_action_concerns(summary: &AiUsageSummary, signals: &mut Vec<Sign
     if actions.emails_sent > 0 || actions.messages_sent > 0 {
         let total_comms = actions.emails_sent + actions.messages_sent;
         signals.push(Signal {
+            id: "agent_communications_sent".to_string(),
             principle: Principle::Transparency,
             severity: if total_comms > 20 {
                 Severity::Concern
@@ -828,6 +858,7 @@ fn detect_agent_action_concerns(summary: &AiUsageSummary, signals: &mut Vec<Sign
 
     if actions.approvals_denied > 0 {
         signals.push(Signal {
+            id: "agent_actions_denied".to_string(),
             principle: Principle::Security,
             severity: Severity::Info,
             title: "Agent actions denied by human".to_string(),
@@ -853,6 +884,7 @@ fn detect_agent_action_concerns(summary: &AiUsageSummary, signals: &mut Vec<Sign
 
     if approval_rate > 0.95 && actions.approvals_requested > 10 {
         signals.push(Signal {
+            id: "agent_approval_near_automatic".to_string(),
             principle: Principle::HumanAgency,
             severity: Severity::Info,
             title: "Near-automatic approval pattern".to_string(),
@@ -908,6 +940,7 @@ fn detect_prompt_injection_risk(summary: &RepoSummary, signals: &mut Vec<Signal>
             .collect();
 
         signals.push(Signal {
+            id: "security_prompt_injection_pr".to_string(),
             principle: Principle::Security,
             severity: Severity::Warning,
             title: "Potential prompt injection in PR descriptions".to_string(),

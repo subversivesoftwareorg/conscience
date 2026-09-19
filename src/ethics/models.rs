@@ -125,6 +125,11 @@ impl std::fmt::Display for Severity {
 /// Signals never render verdicts — they present evidence for human judgment.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Signal {
+    /// Stable machine identity, e.g. `ai_turn_ratio_high`. Titles and
+    /// wording may change between versions; the id must not, so history
+    /// and dashboards can recognise the same signal across snapshots.
+    #[serde(default)]
+    pub id: String,
     pub principle: Principle,
     pub severity: Severity,
     pub title: String,
