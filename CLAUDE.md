@@ -156,6 +156,11 @@ Defaults: the current directory is the project; `--all` is explicit;
 `--days`/`--since` set one interval shared by every source; `--json` is
 the machine format everywhere; every run prints what it covered.
 
+The GitHub repository defaults too: `--repo`, else `github.repo` in
+conscience.yaml, else the checkout's `origin` remote when it is on GitHub.
+A detected repo is only fetched when GitHub auth is available; otherwise
+the coverage line says so and nothing fails. `--no-github` opts out.
+
 ```
 # Check setup status (green/red checklist with directions)
 conscience setup
@@ -163,24 +168,24 @@ conscience setup
 # Ethical analysis of the current project. Default output answers three
 # things: what was analyzed, what deserves attention, what is worth
 # discussing. Writes a snapshot to .conscience/snapshots/ every run.
-conscience examine [--repo <owner/repo>] [--project <path>] [--days 30] [--json]
+conscience examine [--repo <owner/repo> | --no-github] [--project <path>] [--days 30] [--json]
 conscience examine --full ...                 # every signal, scorecard, all questions
 conscience examine --pr <url|owner/repo#N> [--project <path>] [--json]   # one PR, over its lifetime
 conscience examine --all [--days 30] [--json]                            # every project on this machine
 conscience examine --all --markdown [--output digest.md] [--days 7]      # Markdown digest
 
 # Diagnostic reports (current project by default; --all for every project)
-conscience report github --repo <owner/repo> [--days 30]
+conscience report github [--repo <owner/repo>] [--project <path>] [--days 30]
 conscience report ai [--tool claude-code] [--project <path>|--all]
 conscience report energy [--project <path>|--all] [--days 30] [--json]
 conscience report tokens [--since 4h] [--project <path>|--all] [--json]   # 90m, 4h, 2d, 1w
-conscience report authorship --repo <owner/repo> [--project <path>] [--days 30] [--json]
+conscience report authorship [--repo <owner/repo>] [--project <path>] [--days 30] [--json]
 conscience report attention [--days 7] [--project <path>] [--json] [--html <out.html>]  # all projects by default
 
 # Reflection questions for team retrospectives (works with zero data; data enriches)
 # --interactive answers each question at a prompt and prints a session summary
 # --save persists answers to .conscience/reflections/<session-id>.json
-conscience reflect [--repo <owner/repo>] [--project <path>] [--days 30] [--interactive] [--save [path]] [--json]
+conscience reflect [--repo <owner/repo> | --no-github] [--project <path>] [--days 30] [--interactive] [--save [path]] [--json]
 
 # Aggregate saved reflection sessions into a team retrospective view
 conscience retro [--dir <path>] [--days 30] [--json]

@@ -2,6 +2,21 @@ use crate::config::Config;
 use crate::error::{ConscienceError, Result};
 use std::process::Command;
 
+/// Is a token obtainable from any source? Quiet: prints nothing, so it can
+/// gate optional GitHub collection without noise on every run.
+pub fn token_available() -> bool {
+    if std::env::var("CONSCIENCE_GITHUB_TOKEN").is_ok_and(|t| !t.is_empty()) {
+        return true;
+    }
+    if Config::load().github.token.is_some_and(|t| !t.is_empty()) {
+        return true;
+    }
+    Command::new("gh")
+        .args(["auth", "token"])
+        .output()
+        .is_ok_and(|o| o.status.success() && !o.stdout.is_empty())
+}
+
 /// Resolve a GitHub token using a layered strategy:
 /// 1. CONSCIENCE_GITHUB_TOKEN env var
 /// 2. Config file (~/.conscience/config.toml)
