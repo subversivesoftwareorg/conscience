@@ -13,17 +13,55 @@ use crate::ethics::manifest::Thresholds;
 use crate::github::models::RepoSummary;
 use crate::ingest;
 use crate::interval::Interval;
-use crate::project::ProjectScope;
+use crate::project::{ProjectScope, RepoSource};
 use crate::snapshot::*;
 use chrono::Utc;
 
 /// What to collect. Exactly one of `repo` or `pr` may be set; with `pr`
-/// the interval is replaced by the pull request's own lifetime.
+/// the interval is replaced by the pull request's own lifetime. With
+/// neither, the repository comes from the manifest or the checkout's
+/// `origin` remote unless `no_github` is set.
 pub struct CollectRequest<'a> {
     pub scope: &'a ProjectScope,
     pub interval: Interval,
     pub repo: Option<&'a str>,
     pub pr: Option<&'a str>,
+    pub no_github: bool,
+}
+
+/// What collect() will do about GitHub, decided before any network call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GithubPlan {
+    /// Fetch this repository; the source says where the name came from.
+    Fetch(String, RepoSource),
+    /// Do not fetch, for this reason (goes into coverage as Skipped).
+    Skip(String),
+}
+
+/// Pure decision: explicit flag wins and is always attempted; a detected
+/// repository is attempted only when a token is available, so a project
+/// without GitHub auth sees one quiet "skipped" line rather than a failure
+/// on every run.
+pub fn plan_github(
+    scope: &ProjectScope,
+    explicit: Option<&str>,
+    no_github: bool,
+    token_available: bool,
+) -> GithubPlan {
+    if no_github {
+        return GithubPlan::Skip("--no-github".into());
+    }
+    match scope.github_repo(explicit) {
+        Some((repo, RepoSource::Flag)) => GithubPlan::Fetch(repo, RepoSource::Flag),
+        Some((repo, source)) if token_available => GithubPlan::Fetch(repo, source),
+        Some((repo, source)) => GithubPlan::Skip(format!(
+            "{} detected from {} but no GitHub auth; run `gh auth login` or set CONSCIENCE_GITHUB_TOKEN",
+            repo, source
+        )),
+        None => GithubPlan::Skip(
+            "no --repo, no github.repo in conscience.yaml, and no GitHub origin remote".into(),
+        ),
+    }
 }
 
 pub struct Collected {
@@ -64,35 +102,54 @@ pub async fn collect(req: CollectRequest<'_>) -> Result<Collected> {
                 None
             }
         }
-    } else if let Some(repo) = req.repo {
-        match ingest::github::ingest_github(repo, &interval).await {
-            Ok(s) => {
-                coverage.github_commits = s.commits.len() as u64;
-                coverage.github_pull_requests = s.pull_requests.len() as u64;
-                coverage.sources.push(SourceCoverage {
-                    source: "github".into(),
-                    status: SourceStatus::Collected,
-                    detail: format!("{} commits, {} PRs", s.commits.len(), s.pull_requests.len()),
-                });
-                Some(s)
+    } else {
+        match plan_github(
+            req.scope,
+            req.repo,
+            req.no_github,
+            crate::github::auth::token_available(),
+        ) {
+            GithubPlan::Fetch(repo, source) => {
+                if source != RepoSource::Flag {
+                    eprintln!("GitHub repository: {} (from {})", repo, source);
+                }
+                match ingest::github::ingest_github(&repo, &interval).await {
+                    Ok(s) => {
+                        coverage.github_commits = s.commits.len() as u64;
+                        coverage.github_pull_requests = s.pull_requests.len() as u64;
+                        coverage.sources.push(SourceCoverage {
+                            source: "github".into(),
+                            status: SourceStatus::Collected,
+                            detail: format!(
+                                "{} commits, {} PRs from {} ({})",
+                                s.commits.len(),
+                                s.pull_requests.len(),
+                                repo,
+                                source
+                            ),
+                        });
+                        Some(s)
+                    }
+                    Err(e) => {
+                        eprintln!("Warning: GitHub collection failed: {}", e);
+                        coverage.sources.push(SourceCoverage {
+                            source: "github".into(),
+                            status: SourceStatus::Failed,
+                            detail: e.to_string(),
+                        });
+                        None
+                    }
+                }
             }
-            Err(e) => {
-                eprintln!("Warning: GitHub collection failed: {}", e);
+            GithubPlan::Skip(reason) => {
                 coverage.sources.push(SourceCoverage {
                     source: "github".into(),
-                    status: SourceStatus::Failed,
-                    detail: e.to_string(),
+                    status: SourceStatus::Skipped,
+                    detail: reason,
                 });
                 None
             }
         }
-    } else {
-        coverage.sources.push(SourceCoverage {
-            source: "github".into(),
-            status: SourceStatus::Skipped,
-            detail: "no --repo given".into(),
-        });
-        None
     };
 
     let ai = match ingest::ai::ingest_claude_code(Some(req.scope), Some(&interval)) {
@@ -195,6 +252,71 @@ pub async fn run(req: CollectRequest<'_>) -> Result<Snapshot> {
     let scope = req.scope;
     let collected = collect(req).await?;
     Ok(analyze(scope, collected))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn scope(remote: Option<&str>, manifest_repo: Option<&str>) -> ProjectScope {
+        let mut s = ProjectScope::from_root(PathBuf::from("/work/app"));
+        s.remote_repo = remote.map(str::to_string);
+        if let Some(r) = manifest_repo {
+            let mut m = crate::ethics::manifest::Manifest::default();
+            m.github.repo = Some(r.into());
+            s.manifest = Some(m);
+        }
+        s
+    }
+
+    #[test]
+    fn explicit_repo_is_always_fetched_even_without_a_token() {
+        assert_eq!(
+            plan_github(&scope(None, None), Some("acme/x"), false, false),
+            GithubPlan::Fetch("acme/x".into(), RepoSource::Flag)
+        );
+    }
+
+    #[test]
+    fn detected_repo_is_fetched_only_with_a_token() {
+        assert_eq!(
+            plan_github(&scope(Some("acme/x"), None), None, false, true),
+            GithubPlan::Fetch("acme/x".into(), RepoSource::Remote)
+        );
+        match plan_github(&scope(Some("acme/x"), None), None, false, false) {
+            GithubPlan::Skip(reason) => {
+                assert!(reason.contains("acme/x"), "{}", reason);
+                assert!(reason.contains("origin remote"), "{}", reason);
+                assert!(reason.contains("gh auth login"), "{}", reason);
+            }
+            other => panic!("expected skip, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn manifest_beats_remote_and_no_github_beats_everything() {
+        assert_eq!(
+            plan_github(&scope(Some("acme/fork"), Some("acme/upstream")), None, false, true),
+            GithubPlan::Fetch("acme/upstream".into(), RepoSource::Manifest)
+        );
+        assert_eq!(
+            plan_github(&scope(Some("acme/x"), Some("acme/y")), Some("acme/z"), true, true),
+            GithubPlan::Skip("--no-github".into())
+        );
+    }
+
+    #[test]
+    fn nothing_to_detect_explains_the_three_options() {
+        match plan_github(&scope(None, None), None, false, true) {
+            GithubPlan::Skip(reason) => {
+                assert!(reason.contains("--repo"));
+                assert!(reason.contains("conscience.yaml"));
+                assert!(reason.contains("origin"));
+            }
+            other => panic!("expected skip, got {:?}", other),
+        }
+    }
 }
 
 fn ai_metrics(ai: &AiUsageSummary) -> Vec<Metric> {

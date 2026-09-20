@@ -26,6 +26,29 @@ pub struct ProjectScope {
     pub manifest: Option<Manifest>,
     /// Whether the root was given explicitly (`--project`) or defaulted to cwd.
     pub explicit: bool,
+    /// `owner/repo` from the checkout's `origin` remote, when it is on GitHub.
+    pub remote_repo: Option<String>,
+}
+
+/// Where a GitHub repository name came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepoSource {
+    /// `--repo` on the command line.
+    Flag,
+    /// `github.repo` in conscience.yaml.
+    Manifest,
+    /// The checkout's `origin` remote.
+    Remote,
+}
+
+impl std::fmt::Display for RepoSource {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            RepoSource::Flag => "--repo",
+            RepoSource::Manifest => "conscience.yaml",
+            RepoSource::Remote => "origin remote",
+        })
+    }
 }
 
 impl ProjectScope {
@@ -37,7 +60,27 @@ impl ProjectScope {
             worktrees: Vec::new(),
             manifest: None,
             explicit: true,
+            remote_repo: None,
         }
+    }
+
+    /// The GitHub repository to use, in priority order: an explicit flag,
+    /// then `github.repo` in the manifest, then the `origin` remote.
+    pub fn github_repo(&self, explicit: Option<&str>) -> Option<(String, RepoSource)> {
+        if let Some(r) = explicit.filter(|s| !s.trim().is_empty()) {
+            return Some((r.trim().to_string(), RepoSource::Flag));
+        }
+        if let Some(r) = self
+            .manifest
+            .as_ref()
+            .and_then(|m| m.github.repo.clone())
+            .filter(|s| !s.trim().is_empty())
+        {
+            return Some((r.trim().to_string(), RepoSource::Manifest));
+        }
+        self.remote_repo
+            .clone()
+            .map(|r| (r, RepoSource::Remote))
     }
 
     /// All directories that count as this project: root first, then worktrees.
@@ -127,11 +170,14 @@ pub fn resolve_project(explicit: Option<&Path>) -> Result<ProjectScope> {
         }
     }
 
+    let remote_repo = crate::github::remote::detect_origin_repo(&root);
+
     Ok(ProjectScope {
         root,
         worktrees,
         manifest,
         explicit: was_explicit,
+        remote_repo,
     })
 }
 
@@ -197,6 +243,69 @@ mod tests {
         assert!(scope.matches_encoded_dir("-Users-dev-work-conscience-wt-feature"));
         assert!(scope.matches_cwd("/Users/dev/work/conscience-wt-feature"));
         assert!(!scope.matches_cwd("/Users/dev/work/other"));
+    }
+
+    #[test]
+    fn github_repo_prefers_flag_then_manifest_then_remote() {
+        let mut scope = ProjectScope::from_root(PathBuf::from("/work/app"));
+        assert_eq!(scope.github_repo(None), None);
+
+        scope.remote_repo = Some("acme/app".into());
+        assert_eq!(
+            scope.github_repo(None),
+            Some(("acme/app".into(), RepoSource::Remote))
+        );
+
+        let mut m = Manifest::default();
+        m.github.repo = Some("acme/app-upstream".into());
+        scope.manifest = Some(m);
+        assert_eq!(
+            scope.github_repo(None),
+            Some(("acme/app-upstream".into(), RepoSource::Manifest))
+        );
+
+        assert_eq!(
+            scope.github_repo(Some("other/thing")),
+            Some(("other/thing".into(), RepoSource::Flag))
+        );
+        // Blank flag and blank manifest values do not count.
+        assert_eq!(
+            scope.github_repo(Some("  ")),
+            Some(("acme/app-upstream".into(), RepoSource::Manifest))
+        );
+    }
+
+    #[test]
+    fn resolve_detects_origin_remote_of_a_git_checkout() {
+        let tmp = std::env::temp_dir().join(format!("conscience-remote-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let git = |args: &[&str]| {
+            let ok = std::process::Command::new("git")
+                .arg("-C")
+                .arg(&tmp)
+                .args(args)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+            assert!(ok, "git {:?}", args);
+        };
+        git(&["init", "-q"]);
+        git(&["remote", "add", "origin", "git@github.com:acme/detected.git"]);
+
+        let scope = resolve_project(Some(&tmp)).unwrap();
+        assert_eq!(scope.remote_repo.as_deref(), Some("acme/detected"));
+        assert_eq!(
+            scope.github_repo(None),
+            Some(("acme/detected".into(), RepoSource::Remote))
+        );
+
+        // A non-GitHub remote is simply not a GitHub repo.
+        git(&["remote", "set-url", "origin", "git@gitlab.com:acme/detected.git"]);
+        let scope = resolve_project(Some(&tmp)).unwrap();
+        assert_eq!(scope.remote_repo, None);
+
+        std::fs::remove_dir_all(&tmp).ok();
     }
 
     #[test]

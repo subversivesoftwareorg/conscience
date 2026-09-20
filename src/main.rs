@@ -72,9 +72,12 @@ enum Commands {
     /// Ethical analysis of the current project: what was analyzed, what
     /// deserves attention, what is worth discussing. Writes a snapshot.
     Examine {
-        /// GitHub repository (owner/repo) to include commits and PRs
-        #[arg(long, conflicts_with_all = ["pr", "all"])]
+        /// GitHub repository (owner/repo). Default: github.repo in conscience.yaml, else the checkout's origin remote
+        #[arg(long, conflicts_with_all = ["pr", "all", "no_github"])]
         repo: Option<String>,
+        /// Do not collect GitHub data even if a repository can be detected
+        #[arg(long, conflicts_with_all = ["pr", "all"])]
+        no_github: bool,
         /// Analyze a single pull request (URL or owner/repo#N) over its own lifetime
         #[arg(long, conflicts_with = "all")]
         pr: Option<String>,
@@ -107,9 +110,12 @@ enum Commands {
     },
     /// Generate reflection questions for a team retrospective
     Reflect {
-        /// GitHub repository (owner/repo) to enrich questions with activity data
-        #[arg(long)]
+        /// GitHub repository (owner/repo). Default: github.repo in conscience.yaml, else the checkout's origin remote
+        #[arg(long, conflicts_with = "no_github")]
         repo: Option<String>,
+        /// Do not collect GitHub data even if a repository can be detected
+        #[arg(long)]
+        no_github: bool,
         /// Number of days to look back for GitHub data
         #[arg(long, default_value = "30")]
         days: u32,
@@ -247,9 +253,12 @@ enum IngestSource {
 enum ReportSource {
     /// GitHub activity: commits, PRs, reviews
     Github {
-        /// GitHub repository (owner/repo)
+        /// GitHub repository (owner/repo). Default: github.repo in conscience.yaml, else the checkout's origin remote
         #[arg(long)]
-        repo: String,
+        repo: Option<String>,
+        /// Project directory whose manifest or remote names the repository (default: current directory)
+        #[arg(long)]
+        project: Option<PathBuf>,
         /// Number of days to look back
         #[arg(long, default_value = "30")]
         days: u32,
@@ -298,9 +307,9 @@ enum ReportSource {
     },
     /// Who is writing code vs. operating AI tools
     Authorship {
-        /// GitHub repository (owner/repo)
+        /// GitHub repository (owner/repo). Default: github.repo in conscience.yaml, else the checkout's origin remote
         #[arg(long)]
-        repo: String,
+        repo: Option<String>,
         /// Number of days to look back
         #[arg(long, default_value = "30")]
         days: u32,
@@ -357,6 +366,7 @@ async fn main() {
         Commands::Setup => run_setup(),
         Commands::Examine {
             repo,
+            no_github,
             pr,
             all,
             days,
@@ -371,11 +381,15 @@ async fn main() {
             } else if all {
                 run_examine_all(days, json, markdown, output.as_deref()).await
             } else {
-                run_examine(repo.as_deref(), days, project.as_deref(), json, full).await
+                run_examine(repo.as_deref(), no_github, days, project.as_deref(), json, full).await
             }
         }
         Commands::Report { source } => match source {
-            ReportSource::Github { repo, days } => run_github_report(&repo, days).await,
+            ReportSource::Github {
+                repo,
+                project,
+                days,
+            } => run_github_report(repo.as_deref(), project.as_deref(), days).await,
             ReportSource::Ai { tool, project, all } => {
                 run_ai_report(tool.as_deref(), project.as_deref(), all)
             }
@@ -396,7 +410,7 @@ async fn main() {
                 days,
                 project,
                 json,
-            } => run_authorship(&repo, days, project.as_deref(), json).await,
+            } => run_authorship(repo.as_deref(), days, project.as_deref(), json).await,
             ReportSource::Attention {
                 days,
                 project,
@@ -406,12 +420,24 @@ async fn main() {
         },
         Commands::Reflect {
             repo,
+            no_github,
             days,
             project,
             interactive,
             save,
             json,
-        } => run_reflect(repo.as_deref(), days, project.as_deref(), interactive, save, json).await,
+        } => {
+            run_reflect(
+                repo.as_deref(),
+                no_github,
+                days,
+                project.as_deref(),
+                interactive,
+                save,
+                json,
+            )
+            .await
+        }
         Commands::Retro { dir, days, json } => run_retro(dir.as_deref(), days, json),
         Commands::Push {
             snapshot,
@@ -444,7 +470,7 @@ async fn main() {
             json,
         } => {
             deprecated("authorship", "report authorship");
-            run_authorship(&repo, days, project.as_deref(), json).await
+            run_authorship(Some(&repo), days, project.as_deref(), json).await
         }
         Commands::Attention {
             days,
@@ -521,6 +547,17 @@ fn run_setup() -> Result<(), Box<dyn std::error::Error>> {
         println!("  {} conscience.yaml (not found in current directory)", fail);
         println!("    \u{2192} Create conscience.yaml with your project name and mission");
         println!("    \u{2192} See: https://github.com/subversivesoftwareorg/conscience#configuration-conscienceyaml");
+    }
+
+    // 2b. Which GitHub repository commands will use here by default
+    match project::resolve_project(None).ok().and_then(|s| s.github_repo(None)) {
+        Some((repo, source)) => {
+            println!("  {} GitHub repository: {} (from {})", ok, repo, source);
+        }
+        None => {
+            println!("  {} GitHub repository (none detected)", fail);
+            println!("    \u{2192} Pass --repo, set github.repo in conscience.yaml, or add a GitHub origin remote");
+        }
     }
 
     // 3. Claude Code logs
@@ -616,9 +653,36 @@ async fn run_github_ingest(repo: &str, days: u32) -> Result<(), Box<dyn std::err
     Ok(())
 }
 
-async fn run_github_report(repo: &str, days: u32) -> Result<(), Box<dyn std::error::Error>> {
+/// The repository for a GitHub-only command: the flag, else the manifest,
+/// else the current directory's origin remote. Errors if none applies.
+fn required_repo(
+    explicit: Option<&str>,
+    project: Option<&Path>,
+) -> Result<String, Box<dyn std::error::Error>> {
+    let scope = project::resolve_project(project)?;
+    match scope.github_repo(explicit) {
+        Some((repo, source)) => {
+            if source != project::RepoSource::Flag {
+                eprintln!("GitHub repository: {} (from {})", repo, source);
+            }
+            Ok(repo)
+        }
+        None => Err(format!(
+            "No GitHub repository: pass --repo, set github.repo in conscience.yaml, or run inside a checkout with a GitHub origin remote ({})",
+            scope.root.display()
+        )
+        .into()),
+    }
+}
+
+async fn run_github_report(
+    repo: Option<&str>,
+    project: Option<&Path>,
+    days: u32,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = required_repo(repo, project)?;
     let interval = Interval::last_days(days);
-    let summary = ingest::github::ingest_github(repo, &interval).await?;
+    let summary = ingest::github::ingest_github(&repo, &interval).await?;
     report::print_summary(&summary);
     Ok(())
 }
@@ -708,13 +772,14 @@ fn run_energy_report(
 }
 
 async fn run_authorship(
-    repo: &str,
+    repo: Option<&str>,
     days: u32,
     project: Option<&std::path::Path>,
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let repo = required_repo(repo, project)?;
     let interval = Interval::last_days(days);
-    let github_summary = ingest::github::ingest_github(repo, &interval).await?;
+    let github_summary = ingest::github::ingest_github(&repo, &interval).await?;
     let scope = optional_scope(project)?;
     let ai_summary = ingest::ai::ingest_claude_code(scope.as_ref(), Some(&interval))?;
 
@@ -1029,8 +1094,10 @@ async fn run_examine_all(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_reflect(
     repo: Option<&str>,
+    no_github: bool,
     days: u32,
     project: Option<&std::path::Path>,
     interactive: bool,
@@ -1048,6 +1115,7 @@ async fn run_reflect(
         interval: Interval::last_days(days),
         repo,
         pr: None,
+        no_github,
     })
     .await?;
     let github_summary = collected.github;
@@ -1147,6 +1215,7 @@ async fn run_evaluate(
         interval: Interval::last_days(30), // replaced by the PR window
         repo: None,
         pr: Some(pr_url),
+        no_github: false,
     })
     .await?;
 
@@ -1279,6 +1348,7 @@ fn run_retro(
 
 async fn run_examine(
     repo: Option<&str>,
+    no_github: bool,
     days: u32,
     project: Option<&std::path::Path>,
     json_output: bool,
@@ -1295,12 +1365,17 @@ async fn run_examine(
         interval: Interval::last_days(days),
         repo,
         pr: None,
+        no_github,
     })
     .await?;
 
     if collected.github.is_none() && collected.ai.is_none() {
-        eprintln!("No data sources available. Provide --repo and/or --project.");
-        eprintln!("Coverage: {}", collected.coverage.summary());
+        eprintln!("No data sources available for {}.", scope.root.display());
+        eprintln!("  Coverage: {}", collected.coverage.summary());
+        eprintln!(
+            "  Point --project at a directory with Claude Code sessions, or give a GitHub \
+             repository via --repo, github.repo in conscience.yaml, or an origin remote."
+        );
         std::process::exit(1);
     }
 
@@ -1412,5 +1487,28 @@ mod cli_tests {
             .map(|c| c.get_name().to_string())
             .collect();
         assert_eq!(visible, ["setup", "examine", "report", "reflect", "retro", "push"]);
+    }
+
+    #[test]
+    fn repo_is_optional_and_no_github_is_exclusive_with_it() {
+        assert!(matches!(
+            parse(&["report", "github"]).unwrap().command,
+            Commands::Report { source: ReportSource::Github { repo: None, .. } }
+        ));
+        assert!(matches!(
+            parse(&["report", "authorship", "--days", "7"]).unwrap().command,
+            Commands::Report { source: ReportSource::Authorship { repo: None, days: 7, .. } }
+        ));
+        assert!(matches!(
+            parse(&["examine", "--no-github"]).unwrap().command,
+            Commands::Examine { no_github: true, repo: None, .. }
+        ));
+        assert!(parse(&["examine", "--no-github", "--repo", "o/r"]).is_err());
+        assert!(parse(&["examine", "--no-github", "--pr", "o/r#1"]).is_err());
+        assert!(parse(&["reflect", "--no-github", "--repo", "o/r"]).is_err());
+        assert!(matches!(
+            parse(&["reflect", "--no-github"]).unwrap().command,
+            Commands::Reflect { no_github: true, .. }
+        ));
     }
 }

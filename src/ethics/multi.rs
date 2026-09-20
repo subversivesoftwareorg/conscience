@@ -42,11 +42,15 @@ pub async fn analyze_all_projects(interval: &Interval) -> Result<MultiProjectAna
         // Same pipeline as examine, so every row is a real assessment with
         // coverage. Snapshots are not persisted here: that would write into
         // other repositories' directories.
+        // Cross-project runs only fetch GitHub for projects whose manifest
+        // names a repo. Detecting origin remotes here would mean one API
+        // sweep per checkout on the machine, which is slow and rarely wanted.
         let collected = pipeline::collect(pipeline::CollectRequest {
             scope: &scope,
             interval: *interval,
             repo: repo.as_deref(),
             pr: None,
+            no_github: repo.is_none(),
         })
         .await?;
 
