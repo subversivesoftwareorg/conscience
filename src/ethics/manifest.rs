@@ -213,6 +213,10 @@ pub struct EnergyConfig {
     pub grid_carbon_intensity: Option<f64>,
     #[serde(default)]
     pub water_liters_per_kwh: Option<f64>,
+    /// Everyday comparisons ("days of a household's electricity"), keyed by
+    /// the built-in name to adjust one, or by a new name to add one.
+    #[serde(default)]
+    pub comparisons: BTreeMap<String, ComparisonOverride>,
 }
 
 impl Default for EnergyConfig {
@@ -221,8 +225,27 @@ impl Default for EnergyConfig {
             overrides: BTreeMap::new(),
             grid_carbon_intensity: Some(0.42),
             water_liters_per_kwh: Some(1.8),
+            comparisons: BTreeMap::new(),
         }
     }
+}
+
+/// Adjust, disable, or add an everyday comparison. To add one, give
+/// `quantity`, `value` (Wh, kg CO2, or liters per one unit), and `plural`.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ComparisonOverride {
+    #[serde(default)]
+    pub quantity: Option<crate::analysis::comparisons::Quantity>,
+    #[serde(default)]
+    pub value: Option<f64>,
+    #[serde(default)]
+    pub singular: Option<String>,
+    #[serde(default)]
+    pub plural: Option<String>,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub disabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -222,7 +222,30 @@ pub fn render_multi_project_markdown(analysis: &MultiProjectAnalysis, days: u32)
 
     // Rough energy from total output tokens using large-tier default (1.5 Wh/1K output)
     let rough_energy_wh = analysis.total_output_tokens as f64 * 1.5 / 1000.0;
-    let _ = writeln!(md, "**Estimated energy:** ~{:.0} Wh (~{:.1} hours of laptop use)", rough_energy_wh, rough_energy_wh / 60.0);
+    let energy_config = crate::ethics::manifest::EnergyConfig::default();
+    let comparisons = crate::analysis::comparisons::Comparisons::for_estimate(
+        rough_energy_wh,
+        (rough_energy_wh * 0.5, rough_energy_wh * 1.5),
+        energy_config.grid_carbon_intensity.map(|gi| rough_energy_wh / 1000.0 * gi),
+        energy_config.water_liters_per_kwh.map(|wl| rough_energy_wh / 1000.0 * wl),
+        &energy_config,
+    );
+    // One equivalent per quantity keeps the headline to a single line.
+    let equivalents: Vec<String> = [&comparisons.energy, &comparisons.co2, &comparisons.water]
+        .iter()
+        .filter_map(|list| list.first())
+        .map(|c| c.phrase())
+        .collect();
+    let _ = writeln!(
+        md,
+        "**Estimated energy:** ~{:.0} Wh (\u{00b1}50%), roughly {}",
+        rough_energy_wh,
+        if equivalents.is_empty() {
+            "nothing measurable".to_string()
+        } else {
+            equivalents.join("; ")
+        }
+    );
     let _ = writeln!(md);
 
     // Top Concerns

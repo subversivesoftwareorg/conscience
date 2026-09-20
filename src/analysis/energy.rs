@@ -51,6 +51,9 @@ pub struct EnergyEstimate {
     pub water_liters: Option<f64>,
     pub water_liters_per_kwh: Option<f64>,
     pub methodology: String,
+    /// Everyday equivalents chosen for this estimate's scale.
+    #[serde(default)]
+    pub comparisons: crate::analysis::comparisons::Comparisons,
 }
 
 struct TierDef {
@@ -203,6 +206,17 @@ pub fn estimate_total_energy(sessions: &[AiSession], config: &EnergyConfig) -> E
 
     let co2_kg = config.grid_carbon_intensity.map(|gi| total_wh / 1000.0 * gi);
     let water_liters = config.water_liters_per_kwh.map(|wl| total_wh / 1000.0 * wl);
+    let uncertainty_range = (
+        total_wh * (1.0 - blended_uncertainty / 100.0),
+        total_wh * (1.0 + blended_uncertainty / 100.0),
+    );
+    let comparisons = crate::analysis::comparisons::Comparisons::for_estimate(
+        total_wh,
+        uncertainty_range,
+        co2_kg,
+        water_liters,
+        config,
+    );
 
     EnergyEstimate {
         period_days: 0,
@@ -211,15 +225,13 @@ pub fn estimate_total_energy(sessions: &[AiSession], config: &EnergyConfig) -> E
         total_wh,
         total_kwh: total_wh / 1000.0,
         blended_wh_per_1k_output,
-        uncertainty_range: (
-            total_wh * (1.0 - blended_uncertainty / 100.0),
-            total_wh * (1.0 + blended_uncertainty / 100.0),
-        ),
+        uncertainty_range,
         co2_kg,
         grid_carbon_intensity: config.grid_carbon_intensity,
         water_liters,
         water_liters_per_kwh: config.water_liters_per_kwh,
         methodology: "Estimates based on Jegham et al. 2025, mdodkins 2026, Patterson et al. 2025. \
             Water: Li et al. 2023. No provider publishes official per-model energy or water data.".to_string(),
+        comparisons,
     }
 }

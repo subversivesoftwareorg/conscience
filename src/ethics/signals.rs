@@ -439,13 +439,16 @@ fn detect_token_consumption(summary: &AiUsageSummary, signals: &mut Vec<Signal>)
                 }
             ),
             evidence: format!(
-                "Total: {:.1}M tokens ({:.1}M output, {:.1}M cache), \
-                roughly {:.1} hours of laptop use{}",
+                "Total: {:.1}M tokens ({:.1}M output, {:.1}M cache), roughly {}{}",
                 total as f64 / 1_000_000.0,
                 output as f64 / 1_000_000.0,
                 (summary.total_tokens.cache_creation + summary.total_tokens.cache_read) as f64
                     / 1_000_000.0,
-                est.total_wh / 60.0,
+                est.comparisons
+                    .energy
+                    .first()
+                    .map(|c| c.phrase())
+                    .unwrap_or_else(|| format!("{:.0} Wh", est.total_wh)),
                 est.water_liters.map_or(String::new(), |w| format!(", ~{:.1}L water", w)),
             ),
         });

@@ -154,3 +154,30 @@ thresholds:
 
   # Set to true if this is a solo/small project where concentration is expected
   # solo_project: false
+
+  # Energy, CO2, and water estimates (report energy, the digest, and the
+  # environmental-cost signal). All figures are estimates from third-party
+  # research; no provider publishes official numbers.
+  # energy:
+  #   grid_carbon_intensity: 0.42     # kg CO2 per kWh, location-based; set for your grid
+  #   water_liters_per_kwh: 1.8       # on-site cooling + off-site generation (Li et al. 2023)
+  #   overrides:                      # per-model Wh per 1K tokens, if you have better data
+  #     "my-custom-model":
+  #       wh_per_1k_input: 0.5
+  #       wh_per_1k_output: 2.0
+  #   # Everyday comparisons shown as "equivalent to". Adjust a built-in by
+  #   # its key, disable one, or add your own. Built-ins: phone_charge,
+  #   # laptop_hour, us_household_day, eu_household_day, ev_mile (energy);
+  #   # car_mile, us_person_electricity_day (co2); bottle, shower,
+  #   # drinking_day (water). Values are Wh, kg CO2, or liters per one unit.
+  #   comparisons:
+  #     eu_household_day:
+  #       value: 8500                 # Wh per day for your region
+  #       source: "Destatis 2023"
+  #     us_household_day:
+  #       disabled: true
+  #     train_km:
+  #       quantity: energy
+  #       value: 100
+  #       plural: "km of electric-train travel"
+  #       source: "team estimate"
