@@ -423,7 +423,18 @@ fn test_token_consumption_signal_includes_energy_estimate() {
     assert!(token_signal.is_some(), "should have token consumption signal");
     let sig = token_signal.unwrap();
     assert!(sig.detail.contains("Wh"), "detail should mention Wh, got: {}", sig.detail);
-    assert!(sig.evidence.contains("laptop"), "evidence should have laptop comparison, got: {}", sig.evidence);
+    // 2M output tokens on the frontier tier is ~6 kWh: the comparison
+    // chosen by scale is car miles or household days, never raw Wh.
+    assert!(
+        sig.evidence.contains("roughly ") && !sig.evidence.contains("roughly 6"),
+        "evidence should carry an everyday comparison, got: {}",
+        sig.evidence
+    );
+    assert!(
+        sig.evidence.contains("driving") || sig.evidence.contains("household"),
+        "expected a scale-appropriate comparison, got: {}",
+        sig.evidence
+    );
 }
 
 // --- Stable signal identity ---
