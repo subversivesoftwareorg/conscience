@@ -106,7 +106,7 @@ enum Commands {
         #[arg(long, requires = "pr")]
         comment: bool,
     },
-    /// Diagnostic reports: github, ai, energy, tokens, authorship, attention
+    /// Diagnostic reports: github, ai, energy, tokens, authorship, attention, history
     Report {
         #[command(subcommand)]
         source: ReportSource,
@@ -323,6 +323,18 @@ enum ReportSource {
         #[arg(long)]
         json: bool,
     },
+    /// Change over time: compares this project's saved snapshots, like with like
+    History {
+        /// Project directory (default: current directory)
+        #[arg(long)]
+        project: Option<PathBuf>,
+        /// Only snapshots collected in the last N days
+        #[arg(long, default_value = "90")]
+        days: u32,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Attention and flow: switching between projects (default: all projects)
     Attention {
         /// Number of days to look back
@@ -423,6 +435,11 @@ async fn main() {
                 json,
                 html,
             } => run_attention(days, project.as_deref(), json, html.as_deref()).await,
+            ReportSource::History {
+                project,
+                days,
+                json,
+            } => run_history(project.as_deref(), days, json),
         },
         Commands::Reflect {
             repo,
@@ -897,6 +914,29 @@ async fn run_push(
 
     dashboard::push::push_export(&endpoint, &export, api_key.as_deref()).await?;
 
+    Ok(())
+}
+
+fn run_history(
+    project: Option<&Path>,
+    days: u32,
+    json_output: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let scope = project_scope(project)?;
+    let since = chrono::Utc::now() - chrono::Duration::days(days as i64);
+    let entries = conscience::history::load(&scope.root, since);
+    eprintln!(
+        "Project: {} ({} snapshot(s) collected in the last {} days)",
+        scope.root.display(),
+        entries.len(),
+        days
+    );
+    let history = conscience::history::build(entries);
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&history)?);
+    } else {
+        print!("{}", conscience::history::render(&history));
+    }
     Ok(())
 }
 

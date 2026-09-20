@@ -6,6 +6,7 @@ pub mod error;
 pub mod ethics;
 pub mod export;
 pub mod github;
+pub mod history;
 pub mod ingest;
 pub mod interval;
 pub mod pipeline;

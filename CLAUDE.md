@@ -183,6 +183,7 @@ conscience report energy [--project <path>|--all] [--days 30] [--json]
 conscience report tokens [--since 4h] [--project <path>|--all] [--json]   # 90m, 4h, 2d, 1w
 conscience report authorship [--repo <owner/repo>] [--project <path>] [--days 30] [--json]
 conscience report attention [--days 7] [--project <path>] [--json] [--html <out.html>]  # all projects by default
+conscience report history [--project <path>] [--days 90] [--json]   # compare saved snapshots, like with like
 
 # Reflection questions for team retrospectives (works with zero data; data enriches)
 # --interactive answers each question at a prompt and prints a session summary

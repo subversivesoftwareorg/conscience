@@ -112,7 +112,7 @@ impl std::fmt::Display for SourceStatus {
 
 /// One measured or estimated number, with enough context to compare it
 /// honestly later: what it counts, per what, and how sure we are.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Metric {
     /// Dotted key, e.g. `ai.output_tokens`, `github.prs_merged`, `energy.wh`.
     pub key: String,
