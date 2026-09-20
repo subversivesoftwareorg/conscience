@@ -171,6 +171,8 @@ conscience setup
 conscience examine [--repo <owner/repo> | --no-github] [--project <path>] [--days 30] [--json]
 conscience examine --full ...                 # every signal, scorecard, all questions
 conscience examine --pr <url|owner/repo#N> [--project <path>] [--json]   # one PR, over its lifetime
+conscience examine --pr ... --comment      # post the (sanitized) analysis as a PR comment; edits its own earlier one
+conscience examine --pr ... --markdown     # print the comment body instead of posting
 conscience examine --all [--days 30] [--json]                            # every project on this machine
 conscience examine --all --markdown [--output digest.md] [--days 7]      # Markdown digest
 

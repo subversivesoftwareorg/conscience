@@ -96,12 +96,15 @@ enum Commands {
         /// Show every signal, the scorecard, and all reflection questions
         #[arg(long, conflicts_with_all = ["json", "all"])]
         full: bool,
-        /// With --all: render a Markdown digest instead of a table
-        #[arg(long, requires = "all", conflicts_with = "json")]
+        /// With --all: a Markdown digest. With --pr: the PR comment body, printed instead of posted
+        #[arg(long, conflicts_with = "json")]
         markdown: bool,
         /// With --all --markdown: write the digest to a file
         #[arg(long, requires = "markdown")]
         output: Option<PathBuf>,
+        /// With --pr: post the analysis as a comment on the pull request (edits its earlier comment if one exists)
+        #[arg(long, requires = "pr")]
+        comment: bool,
     },
     /// Diagnostic reports: github, ai, energy, tokens, authorship, attention
     Report {
@@ -375,11 +378,14 @@ async fn main() {
             full,
             markdown,
             output,
+            comment,
         } => {
             if let Some(pr) = pr {
-                run_evaluate(&pr, project.as_deref(), json).await
+                run_evaluate(&pr, project.as_deref(), json, markdown, comment).await
             } else if all {
                 run_examine_all(days, json, markdown, output.as_deref()).await
+            } else if markdown {
+                Err("--markdown needs --all (a digest) or --pr (a comment body)".into())
             } else {
                 run_examine(repo.as_deref(), no_github, days, project.as_deref(), json, full).await
             }
@@ -453,7 +459,7 @@ async fn main() {
         // Deprecated spellings.
         Commands::Evaluate { pr, project, json } => {
             deprecated("evaluate --pr", "examine --pr");
-            run_evaluate(&pr, project.as_deref(), json).await
+            run_evaluate(&pr, project.as_deref(), json, false, false).await
         }
         Commands::ExamineAll { days, json } => {
             deprecated("examine-all", "examine --all");
@@ -1205,6 +1211,8 @@ async fn run_evaluate(
     pr_url: &str,
     project: Option<&std::path::Path>,
     json_output: bool,
+    markdown: bool,
+    comment: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let scope = project_scope(project)?;
 
@@ -1228,7 +1236,10 @@ async fn run_evaluate(
         return Err(format!("Could not fetch the pull request: {}", why).into());
     };
 
-    if !json_output {
+    let pr_number = github.pull_requests[0].number;
+    let (owner, repo_name) = (github.owner.clone(), github.repo.clone());
+
+    if !json_output && !markdown {
         let pr = &github.pull_requests[0];
         println!();
         println!("  Conscience \u{2014} PR #{}: \"{}\"", pr.number, pr.title);
@@ -1249,8 +1260,33 @@ async fn run_evaluate(
 
     if json_output {
         println!("{}", serde_json::to_string_pretty(&snapshot)?);
+    } else if markdown {
+        // The comment body, from the sanitized export, printed not posted.
+        let export = SnapshotExport::from_snapshot(&snapshot);
+        print!("{}", conscience::github::comment::render_pr_comment(&export, pr_number));
     } else {
         ethics::report::print_ethical_analysis(&snapshot.analysis);
+    }
+
+    if comment {
+        let export = SnapshotExport::from_snapshot(&snapshot);
+        eprintln!("  Sanitized: {}", export.sanitization.summary());
+        let body = conscience::github::comment::render_pr_comment(&export, pr_number);
+        let token = conscience::github::auth::resolve_token()?;
+        let client = conscience::github::client::GitHubClient::new(
+            conscience::github::auth::build_client(&token)?,
+        );
+        match client
+            .upsert_pr_comment(&owner, &repo_name, pr_number, &body)
+            .await?
+        {
+            conscience::github::comment::CommentOutcome::Created(url) => {
+                eprintln!("Posted comment on PR #{}: {}", pr_number, url)
+            }
+            conscience::github::comment::CommentOutcome::Updated(url) => {
+                eprintln!("Updated conscience's comment on PR #{}: {}", pr_number, url)
+            }
+        }
     }
 
     Ok(())
@@ -1432,7 +1468,6 @@ mod cli_tests {
         assert!(parse(&["examine", "--pr", "x", "--all"]).is_err());
         assert!(parse(&["examine", "--repo", "x", "--pr", "y"]).is_err());
         assert!(parse(&["examine", "--all", "--project", "."]).is_err());
-        assert!(parse(&["examine", "--markdown"]).is_err(), "markdown requires --all");
         assert!(parse(&["examine", "--all", "--output", "f"]).is_err(), "output requires --markdown");
         assert!(parse(&["examine", "--full", "--json"]).is_err());
     }
@@ -1510,5 +1545,22 @@ mod cli_tests {
             parse(&["reflect", "--no-github"]).unwrap().command,
             Commands::Reflect { no_github: true, .. }
         ));
+    }
+
+    #[test]
+    fn pr_comment_flags_parse_and_require_pr() {
+        assert!(matches!(
+            parse(&["examine", "--pr", "o/r#4", "--comment"]).unwrap().command,
+            Commands::Examine { comment: true, pr: Some(_), .. }
+        ));
+        assert!(matches!(
+            parse(&["examine", "--pr", "o/r#4", "--markdown"]).unwrap().command,
+            Commands::Examine { markdown: true, pr: Some(_), .. }
+        ));
+        assert!(parse(&["examine", "--comment"]).is_err(), "--comment needs --pr");
+        assert!(parse(&["examine", "--pr", "o/r#4", "--comment", "--json"]).is_ok());
+        assert!(parse(&["examine", "--pr", "o/r#4", "--markdown", "--json"]).is_err());
+        // --markdown alone still parses; the dispatcher rejects it with a hint.
+        assert!(parse(&["examine", "--markdown"]).is_ok());
     }
 }
