@@ -88,9 +88,25 @@ fn comment_has_marker_sections_and_no_leaked_evidence() {
             "AI:Human ratio of 1.5:1.",
             "30 assistant turns vs 20 human turns",
         ),
+        signal(
+            "manifest_review_stale",
+            Severity::Concern,
+            "Monthly review is stale",
+            "Last updated long ago.",
+            "conscience.yaml monthly_review.last_updated",
+        ),
     ]);
     let export = SnapshotExport::from_snapshot(&snap);
     let md = render_pr_comment(&export, 42);
+
+    // Project-configuration signals are not about the change under review.
+    assert!(!md.contains("Monthly review is stale"), "{}", md);
+    assert!(
+        md.contains("| Security | 2 |"),
+        "manifest signal not counted in the scorecard either"
+    );
+    // AI data was collected here, so no hint about adding it.
+    assert!(!md.contains("No AI session data was available"), "{}", md);
 
     assert!(
         md.starts_with(MARKER),
@@ -133,6 +149,25 @@ fn comment_with_nothing_flagged_says_so_without_claiming_health() {
     assert!(md.contains("No concerns or warnings detected in the available data."));
     assert!(md.contains("(1 signal(s) at info or healthy level.)"));
     assert!(!md.to_lowercase().contains("healthy pr"));
+}
+
+#[test]
+fn comment_without_ai_data_says_how_to_add_it_in_place() {
+    let mut snap = snapshot(vec![]);
+    snap.coverage.sources[1].status = SourceStatus::Unavailable;
+    snap.coverage.sources[1].detail = "no sessions in range for this project".into();
+    let md = render_pr_comment(&SnapshotExport::from_snapshot(&snap), 42);
+    assert!(
+        md.contains("No AI session data was available where this ran"),
+        "{}",
+        md
+    );
+    assert!(
+        md.contains("`conscience examine --pr acme/demo#42 --comment`"),
+        "hint names the PR so it can be pasted: {}",
+        md
+    );
+    assert!(md.contains("updates this comment in place"));
 }
 
 #[test]
