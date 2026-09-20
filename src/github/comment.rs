@@ -8,6 +8,7 @@
 
 use crate::ethics::models::Severity;
 use crate::export::{ExportSignal, SnapshotExport};
+use crate::snapshot::SourceStatus;
 use std::fmt::Write as _;
 
 /// Hidden in every comment conscience posts, so it can find it again.
@@ -36,13 +37,16 @@ pub fn render_pr_comment(export: &SnapshotExport, pr_number: u64) -> String {
     );
     let _ = writeln!(md);
 
-    let mut attention: Vec<&ExportSignal> = a
-        .signals
+    // Manifest signals are about the project's conscience.yaml, not the
+    // change under review; they belong in `examine`, not on a PR.
+    let relevant: Vec<&ExportSignal> = a.signals.iter().filter(|s| about_the_pr(s)).collect();
+    let mut attention: Vec<&ExportSignal> = relevant
         .iter()
+        .copied()
         .filter(|s| s.severity >= Severity::Concern)
         .collect();
     attention.sort_by_key(|s| std::cmp::Reverse(s.severity));
-    let quiet = a.signals.len() - attention.len();
+    let quiet = relevant.len() - attention.len();
 
     if attention.is_empty() {
         let _ = writeln!(
@@ -92,7 +96,8 @@ pub fn render_pr_comment(export: &SnapshotExport, pr_number: u64) -> String {
     let _ = writeln!(md, "| Principle | Signals | Status |");
     let _ = writeln!(md, "|---|---|---|");
     for d in &a.scorecard {
-        let worst = d.auto_signals.iter().map(|s| s.severity).max();
+        let auto: Vec<&ExportSignal> = d.auto_signals.iter().filter(|s| about_the_pr(s)).collect();
+        let worst = auto.iter().map(|s| s.severity).max();
         let status = match (worst, d.needs_human_input) {
             (None, true) => "Needs human input".to_string(),
             (None, false) => "No data".to_string(),
@@ -103,13 +108,33 @@ pub fn render_pr_comment(export: &SnapshotExport, pr_number: u64) -> String {
             md,
             "| {} | {} | {} |",
             d.principle.name(),
-            d.auto_signals.len(),
+            auto.len(),
             status
         );
     }
     let _ = writeln!(md);
     let _ = writeln!(md, "</details>");
     let _ = writeln!(md);
+
+    // CI runners never have AI session logs. Say so, and say how to add
+    // them: a local run edits this same comment rather than adding another.
+    let ai_collected = export
+        .coverage
+        .sources
+        .iter()
+        .any(|s| s.source == "claude_code" && s.status == SourceStatus::Collected);
+    if !ai_collected {
+        let pr_ref = match &export.project.github_repo {
+            Some(repo) => format!("{}#{}", repo, pr_number),
+            None => format!("#{}", pr_number),
+        };
+        let _ = writeln!(
+            md,
+            "_No AI session data was available where this ran. To add it, run `conscience examine --pr {} --comment` on the machine where the work happened; it updates this comment in place._",
+            pr_ref
+        );
+        let _ = writeln!(md);
+    }
     let _ = writeln!(
         md,
         "<sub>Signals are observations for human judgment, not verdicts. conscience {} \u{00b7} snapshot `{}` \u{00b7} evidence with paths, commands, or names stays on the machine that ran the analysis.</sub>",
@@ -117,6 +142,12 @@ pub fn render_pr_comment(export: &SnapshotExport, pr_number: u64) -> String {
     );
 
     md
+}
+
+/// Signals worth putting on a pull request: everything except the
+/// `manifest_*` family, which describes the project's configuration.
+pub fn about_the_pr(s: &ExportSignal) -> bool {
+    !s.id.starts_with("manifest_")
 }
 
 /// Given existing comments as `(id, body)`, the one conscience posted
