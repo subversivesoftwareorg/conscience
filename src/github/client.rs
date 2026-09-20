@@ -8,6 +8,12 @@ pub struct GitHubClient {
 }
 
 impl GitHubClient {
+    /// The underlying octocrab client, for API calls implemented in other
+    /// modules of this crate.
+    pub fn octocrab(&self) -> &Octocrab {
+        &self.client
+    }
+
     pub fn new(client: Octocrab) -> Self {
         Self { client }
     }
