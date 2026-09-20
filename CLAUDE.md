@@ -150,54 +150,52 @@ When evaluating a feature, PR, or sprint, Conscience should help teams ask:
 
 ## Commands
 
+Six verbs. `examine` and `reflect` are activities on one project; `report`
+holds diagnostic topics; `retro` and `push` work from saved records.
+Defaults: the current directory is the project; `--all` is explicit;
+`--days`/`--since` set one interval shared by every source; `--json` is
+the machine format everywhere; every run prints what it covered.
+
 ```
-# GitHub
-conscience ingest github --repo <owner/repo> --days 30
-conscience report github --repo <owner/repo> --days 30
+# Check setup status (green/red checklist with directions)
+conscience setup
 
-# Energy estimation (estimated Wh per model, CO2, water, uncertainty ranges)
-conscience report energy [--project <path>] [--days 30] [--json]
-
-# AI Tool Usage (Claude Code implemented; Copilot, Cursor, Codex, Windsurf, OpenClaw, NanoClaw planned)
-conscience ingest claude-code [--project <path>]
-conscience report ai [--tool claude-code] [--project <path>]
-
-# Authorship analysis: who is writing code vs. operating AI tools
-conscience authorship --repo <owner/repo> [--project <path>] [--days 30] [--json]
-
-# Ethical Analysis (signals + scorecard + reflection questions)
+# Ethical analysis of the current project. Default output answers three
+# things: what was analyzed, what deserves attention, what is worth
+# discussing. Writes a snapshot to .conscience/snapshots/ every run.
 conscience examine [--repo <owner/repo>] [--project <path>] [--days 30] [--json]
+conscience examine --full ...                 # every signal, scorecard, all questions
+conscience examine --pr <url|owner/repo#N> [--project <path>] [--json]   # one PR, over its lifetime
+conscience examine --all [--days 30] [--json]                            # every project on this machine
+conscience examine --all --markdown [--output digest.md] [--days 7]      # Markdown digest
+
+# Diagnostic reports (current project by default; --all for every project)
+conscience report github --repo <owner/repo> [--days 30]
+conscience report ai [--tool claude-code] [--project <path>|--all]
+conscience report energy [--project <path>|--all] [--days 30] [--json]
+conscience report tokens [--since 4h] [--project <path>|--all] [--json]   # 90m, 4h, 2d, 1w
+conscience report authorship --repo <owner/repo> [--project <path>] [--days 30] [--json]
+conscience report attention [--days 7] [--project <path>] [--json] [--html <out.html>]  # all projects by default
 
 # Reflection questions for team retrospectives (works with zero data; data enriches)
 # --interactive answers each question at a prompt and prints a session summary
-# --save persists answers to .conscience/reflections/ for longitudinal tracking
+# --save persists answers to .conscience/reflections/<session-id>.json
 conscience reflect [--repo <owner/repo>] [--project <path>] [--days 30] [--interactive] [--save [path]] [--json]
 
 # Aggregate saved reflection sessions into a team retrospective view
 conscience retro [--dir <path>] [--days 30] [--json]
 
-# Cross-project analysis across all Claude Code projects
-conscience examine-all [--days 30] [--json]
-
-# Weekly digest: Markdown summary of signal trends across all projects
-conscience digest [--days 7] [--output <path>] [--json]
-
-# Push a saved snapshot to a dashboard server. examine writes a snapshot to
-# .conscience/snapshots/ on every run; push uploads the latest one (or the
-# given id/prefix/path) without re-running analysis. Only an allowlisted
-# export leaves the machine (no paths, commands, or names in evidence);
-# --show prints exactly what would be sent and sends nothing.
+# Push a saved snapshot to a dashboard server: the latest one, or the given
+# id/prefix/path. Never re-runs analysis. Only an allowlisted export leaves
+# the machine (no paths, commands, or names in evidence); --show prints
+# exactly what would be sent and sends nothing.
 conscience push [<snapshot-id>] [--project <path>] [--endpoint <url>] [--show]
-
-# Token retrospective: where did the budget go across recent sessions?
-conscience retro-tokens [--hours 4] [--project <path>] [--json]
-
-# Attention & flow analysis across projects
-conscience attention [--days 7] [--project <path>] [--json] [--html <output.html>]
 ```
 
-# Check setup status (green/red checklist with directions)
-conscience setup
+Hidden but still accepted for one minor version, each printing a note:
+`evaluate` (examine --pr), `examine-all` (examine --all), `digest`
+(examine --all --markdown), `authorship`, `attention`, `retro-tokens`
+(report ...), and `ingest` (raw JSON dump for debugging).
 
 # Ethical analysis scoped to a single PR
 conscience evaluate --pr <url|owner/repo#N> [--project <path>] [--json]
