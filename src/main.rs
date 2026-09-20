@@ -30,6 +30,18 @@ fn optional_scope(
     }
 }
 
+/// Scope for reports that default to the current project but accept `--all`.
+fn report_scope(
+    project: Option<&Path>,
+    all: bool,
+) -> Result<Option<ProjectScope>, Box<dyn std::error::Error>> {
+    if all {
+        Ok(None)
+    } else {
+        Ok(Some(project::resolve_project(project)?))
+    }
+}
+
 /// Manifest for a cross-project command: from the explicit project if given,
 /// otherwise from the current directory (thresholds still apply to "all").
 fn manifest_for(scope: Option<&ProjectScope>) -> Option<ethics::manifest::Manifest> {
@@ -55,53 +67,43 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Ingest data from a source
-    Ingest {
-        #[command(subcommand)]
-        source: IngestSource,
-    },
-    /// Display a summary report
-    Report {
-        #[command(subcommand)]
-        source: ReportSource,
-    },
-    /// Analyze who is writing code vs. who is operating AI tools
-    Authorship {
-        /// GitHub repository (owner/repo)
-        #[arg(long)]
-        repo: String,
+    /// Check which integrations are configured and show setup directions
+    Setup,
+    /// Ethical analysis of the current project: what was analyzed, what
+    /// deserves attention, what is worth discussing. Writes a snapshot.
+    Examine {
+        /// GitHub repository (owner/repo) to include commits and PRs
+        #[arg(long, conflicts_with_all = ["pr", "all"])]
+        repo: Option<String>,
+        /// Analyze a single pull request (URL or owner/repo#N) over its own lifetime
+        #[arg(long, conflicts_with = "all")]
+        pr: Option<String>,
+        /// Analyze every project with Claude Code data instead of one
+        #[arg(long, conflicts_with = "project")]
+        all: bool,
         /// Number of days to look back
         #[arg(long, default_value = "30")]
         days: u32,
-        /// Project directory to match AI sessions
+        /// Project directory (default: current directory)
         #[arg(long)]
         project: Option<PathBuf>,
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-    },
-    /// Cross-project ethical analysis across all Claude Code projects
-    ExamineAll {
-        /// Number of days to look back for GitHub data
-        #[arg(long, default_value = "30")]
-        days: u32,
         /// Output as JSON instead of formatted text
         #[arg(long)]
         json: bool,
+        /// Show every signal, the scorecard, and all reflection questions
+        #[arg(long, conflicts_with_all = ["json", "all"])]
+        full: bool,
+        /// With --all: render a Markdown digest instead of a table
+        #[arg(long, requires = "all", conflicts_with = "json")]
+        markdown: bool,
+        /// With --all --markdown: write the digest to a file
+        #[arg(long, requires = "markdown")]
+        output: Option<PathBuf>,
     },
-    /// Push a saved snapshot to a dashboard server (run `examine` first)
-    Push {
-        /// Snapshot id (or unique prefix) or path; defaults to the latest for the project
-        snapshot: Option<String>,
-        /// Project directory
-        #[arg(long)]
-        project: Option<PathBuf>,
-        /// Dashboard endpoint URL (overrides config)
-        #[arg(long)]
-        endpoint: Option<String>,
-        /// Print exactly what would be sent, as JSON, and do not send it
-        #[arg(long)]
-        show: bool,
+    /// Diagnostic reports: github, ai, energy, tokens, authorship, attention
+    Report {
+        #[command(subcommand)]
+        source: ReportSource,
     },
     /// Generate reflection questions for a team retrospective
     Reflect {
@@ -117,7 +119,7 @@ enum Commands {
         /// Answer each question at a prompt, then see a session summary
         #[arg(long, short)]
         interactive: bool,
-        /// Save session answers to a JSON file (default: .conscience/reflections/YYYY-MM-DD.json)
+        /// Save session answers to a JSON file (default: .conscience/reflections/<session-id>.json)
         #[arg(long)]
         save: Option<Option<PathBuf>>,
         /// Output as JSON instead of formatted text
@@ -136,71 +138,87 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
-    /// Generate a weekly digest summarizing ethical signal trends across repos
+    /// Push a saved snapshot to a dashboard server (run `examine` first)
+    Push {
+        /// Snapshot id (or unique prefix) or path; defaults to the latest for the project
+        snapshot: Option<String>,
+        /// Project directory
+        #[arg(long)]
+        project: Option<PathBuf>,
+        /// Dashboard endpoint URL (overrides config)
+        #[arg(long)]
+        endpoint: Option<String>,
+        /// Print exactly what would be sent, as JSON, and do not send it
+        #[arg(long)]
+        show: bool,
+    },
+    /// Dump raw ingested data as JSON (debugging; not part of the ordinary workflow)
+    #[command(hide = true)]
+    Ingest {
+        #[command(subcommand)]
+        source: IngestSource,
+    },
+
+    // ---- Deprecated spellings, kept as hidden aliases for one minor version. ----
+    /// Deprecated: use `examine --pr`
+    #[command(hide = true)]
+    Evaluate {
+        #[arg(long)]
+        pr: String,
+        #[arg(long)]
+        project: Option<PathBuf>,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Deprecated: use `examine --all`
+    #[command(hide = true, name = "examine-all")]
+    ExamineAll {
+        #[arg(long, default_value = "30")]
+        days: u32,
+        #[arg(long)]
+        json: bool,
+    },
+    /// Deprecated: use `examine --all --markdown`
+    #[command(hide = true)]
     Digest {
-        /// Number of days to look back
         #[arg(long, default_value = "7")]
         days: u32,
-        /// Write digest to a file instead of stdout
         #[arg(long)]
         output: Option<PathBuf>,
-        /// Output as JSON instead of Markdown
         #[arg(long)]
         json: bool,
     },
-    /// Retrospective on token consumption — where did the budget go?
-    RetroTokens {
-        /// Hours to look back
-        #[arg(long, default_value = "4")]
-        hours: u32,
-        /// Filter to a specific project
+    /// Deprecated: use `report authorship`
+    #[command(hide = true)]
+    Authorship {
+        #[arg(long)]
+        repo: String,
+        #[arg(long, default_value = "30")]
+        days: u32,
         #[arg(long)]
         project: Option<PathBuf>,
-        /// Output as JSON
         #[arg(long)]
         json: bool,
     },
-    /// Analyze attention patterns across projects
+    /// Deprecated: use `report attention`
+    #[command(hide = true)]
     Attention {
-        /// Number of days to look back
         #[arg(long, default_value = "7")]
         days: u32,
-        /// Filter to a specific project directory for AI logs
         #[arg(long)]
         project: Option<PathBuf>,
-        /// Output as JSON
         #[arg(long)]
         json: bool,
-        /// Write an HTML timeline visualization to this path
         #[arg(long)]
         html: Option<PathBuf>,
     },
-    /// Check which integrations are configured and show setup directions
-    Setup,
-    /// Ethical analysis scoped to a single pull request
-    Evaluate {
-        /// GitHub PR URL (https://github.com/owner/repo/pull/N) or short form (owner/repo#N)
-        #[arg(long)]
-        pr: String,
-        /// Project directory to enrich with AI session context
+    /// Deprecated: use `report tokens`
+    #[command(hide = true, name = "retro-tokens")]
+    RetroTokens {
+        #[arg(long, default_value = "4")]
+        hours: u32,
         #[arg(long)]
         project: Option<PathBuf>,
-        /// Output as JSON
-        #[arg(long)]
-        json: bool,
-    },
-    /// Ethical analysis: signals, scorecard, and reflection questions
-    Examine {
-        /// GitHub repository (owner/repo)
-        #[arg(long)]
-        repo: Option<String>,
-        /// Number of days to look back for GitHub data
-        #[arg(long, default_value = "30")]
-        days: u32,
-        /// Project directory to filter AI logs
-        #[arg(long)]
-        project: Option<PathBuf>,
-        /// Output as JSON instead of formatted text
         #[arg(long)]
         json: bool,
     },
@@ -227,7 +245,7 @@ enum IngestSource {
 
 #[derive(Subcommand)]
 enum ReportSource {
-    /// Report on GitHub activity
+    /// GitHub activity: commits, PRs, reviews
     Github {
         /// GitHub repository (owner/repo)
         #[arg(long)]
@@ -236,26 +254,77 @@ enum ReportSource {
         #[arg(long, default_value = "30")]
         days: u32,
     },
-    /// Report on AI tool usage
+    /// AI tool usage (all time)
     Ai {
         /// Filter to a specific AI tool (claude-code, copilot, cursor, codex, windsurf, openclaw, nanoclaw)
         #[arg(long, value_parser = parse_ai_tool)]
         tool: Option<String>,
-        /// Filter to a specific project directory
-        #[arg(long)]
+        /// Project directory (default: current directory)
+        #[arg(long, conflicts_with = "all")]
         project: Option<PathBuf>,
+        /// Every project with data instead of one
+        #[arg(long)]
+        all: bool,
     },
-    /// Report on estimated energy consumption of AI usage
+    /// Estimated energy, CO2, and water for AI usage
     Energy {
-        /// Filter to a specific project directory
-        #[arg(long)]
+        /// Project directory (default: current directory)
+        #[arg(long, conflicts_with = "all")]
         project: Option<PathBuf>,
+        /// Every project with data instead of one
+        #[arg(long)]
+        all: bool,
         /// Number of days to look back
         #[arg(long, default_value = "30")]
         days: u32,
         /// Output as JSON
         #[arg(long)]
         json: bool,
+    },
+    /// Token retrospective: where did the budget go across recent sessions?
+    Tokens {
+        /// Window ending now: 90m, 4h, 2d, 1w (bare number = hours)
+        #[arg(long, default_value = "4h")]
+        since: String,
+        /// Project directory (default: current directory)
+        #[arg(long, conflicts_with = "all")]
+        project: Option<PathBuf>,
+        /// Every project with data instead of one
+        #[arg(long)]
+        all: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Who is writing code vs. operating AI tools
+    Authorship {
+        /// GitHub repository (owner/repo)
+        #[arg(long)]
+        repo: String,
+        /// Number of days to look back
+        #[arg(long, default_value = "30")]
+        days: u32,
+        /// Project directory to match AI sessions (default: all projects)
+        #[arg(long)]
+        project: Option<PathBuf>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Attention and flow: switching between projects (default: all projects)
+    Attention {
+        /// Number of days to look back
+        #[arg(long, default_value = "7")]
+        days: u32,
+        /// Narrow to one project directory
+        #[arg(long)]
+        project: Option<PathBuf>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+        /// Write an HTML timeline visualization to this path
+        #[arg(long)]
+        html: Option<PathBuf>,
     },
 }
 
@@ -275,48 +344,66 @@ fn parse_ai_tool(s: &str) -> Result<String, String> {
     }
 }
 
+/// One line on stderr for a command spelling that still works but has moved.
+fn deprecated(old: &str, new: &str) {
+    eprintln!("Note: `conscience {}` is now `conscience {}`; the old form will be removed in a future release.", old, new);
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Ingest { source } => match source {
-            IngestSource::Github { repo, days } => run_github_ingest(&repo, days).await,
-            IngestSource::ClaudeCode { project } => run_claude_code_ingest(project.as_deref()),
-        },
-        Commands::Report { source } => match source {
-            ReportSource::Github { repo, days } => run_github_report(&repo, days).await,
-            ReportSource::Ai { tool, project } => run_ai_report(tool.as_deref(), project.as_deref()),
-            ReportSource::Energy { project, days, json } => run_energy_report(project.as_deref(), days, json),
-        },
-        Commands::Authorship {
-            repo,
-            days,
-            project,
-            json,
-        } => run_authorship(&repo, days, project.as_deref(), json).await,
-        Commands::Digest { days, output, json } => run_digest(days, output.as_deref(), json).await,
-        Commands::RetroTokens { hours, project, json } => run_retro_tokens(hours, project.as_deref(), json),
-        Commands::Attention { days, project, json, html } => {
-            run_attention(days, project.as_deref(), json, html.as_deref()).await
-        }
-        Commands::ExamineAll { days, json } => run_examine_all(days, json).await,
-        Commands::Push {
-            snapshot,
-            project,
-            endpoint,
-            show,
-        } => run_push(snapshot.as_deref(), project.as_deref(), endpoint.as_deref(), show).await,
         Commands::Setup => run_setup(),
-        Commands::Evaluate { pr, project, json } => {
-            run_evaluate(&pr, project.as_deref(), json).await
-        }
         Commands::Examine {
             repo,
+            pr,
+            all,
             days,
             project,
             json,
-        } => run_examine(repo.as_deref(), days, project.as_deref(), json).await,
+            full,
+            markdown,
+            output,
+        } => {
+            if let Some(pr) = pr {
+                run_evaluate(&pr, project.as_deref(), json).await
+            } else if all {
+                run_examine_all(days, json, markdown, output.as_deref()).await
+            } else {
+                run_examine(repo.as_deref(), days, project.as_deref(), json, full).await
+            }
+        }
+        Commands::Report { source } => match source {
+            ReportSource::Github { repo, days } => run_github_report(&repo, days).await,
+            ReportSource::Ai { tool, project, all } => {
+                run_ai_report(tool.as_deref(), project.as_deref(), all)
+            }
+            ReportSource::Energy {
+                project,
+                all,
+                days,
+                json,
+            } => run_energy_report(project.as_deref(), all, days, json),
+            ReportSource::Tokens {
+                since,
+                project,
+                all,
+                json,
+            } => run_retro_tokens(&since, project.as_deref(), all, json),
+            ReportSource::Authorship {
+                repo,
+                days,
+                project,
+                json,
+            } => run_authorship(&repo, days, project.as_deref(), json).await,
+            ReportSource::Attention {
+                days,
+                project,
+                json,
+                html,
+            } => run_attention(days, project.as_deref(), json, html.as_deref()).await,
+        },
         Commands::Reflect {
             repo,
             days,
@@ -326,6 +413,57 @@ async fn main() {
             json,
         } => run_reflect(repo.as_deref(), days, project.as_deref(), interactive, save, json).await,
         Commands::Retro { dir, days, json } => run_retro(dir.as_deref(), days, json),
+        Commands::Push {
+            snapshot,
+            project,
+            endpoint,
+            show,
+        } => run_push(snapshot.as_deref(), project.as_deref(), endpoint.as_deref(), show).await,
+        Commands::Ingest { source } => match source {
+            IngestSource::Github { repo, days } => run_github_ingest(&repo, days).await,
+            IngestSource::ClaudeCode { project } => run_claude_code_ingest(project.as_deref()),
+        },
+
+        // Deprecated spellings.
+        Commands::Evaluate { pr, project, json } => {
+            deprecated("evaluate --pr", "examine --pr");
+            run_evaluate(&pr, project.as_deref(), json).await
+        }
+        Commands::ExamineAll { days, json } => {
+            deprecated("examine-all", "examine --all");
+            run_examine_all(days, json, false, None).await
+        }
+        Commands::Digest { days, output, json } => {
+            deprecated("digest", "examine --all --markdown");
+            run_examine_all(days, json, !json, output.as_deref()).await
+        }
+        Commands::Authorship {
+            repo,
+            days,
+            project,
+            json,
+        } => {
+            deprecated("authorship", "report authorship");
+            run_authorship(&repo, days, project.as_deref(), json).await
+        }
+        Commands::Attention {
+            days,
+            project,
+            json,
+            html,
+        } => {
+            deprecated("attention", "report attention");
+            run_attention(days, project.as_deref(), json, html.as_deref()).await
+        }
+        Commands::RetroTokens {
+            hours,
+            project,
+            json,
+        } => {
+            deprecated("retro-tokens", "report tokens --since <hours>h");
+            // Old behaviour covered every project; keep that for the alias.
+            run_retro_tokens(&format!("{}h", hours), project.as_deref(), project.is_none(), json)
+        }
     };
 
     if let Err(e) = result {
@@ -499,10 +637,11 @@ fn run_claude_code_ingest(
 fn run_ai_report(
     tool: Option<&str>,
     project: Option<&std::path::Path>,
+    all: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let show_claude = tool.is_none() || tool == Some("claude-code");
     let show_codex = tool.is_none() || tool == Some("codex");
-    let scope = optional_scope(project)?;
+    let scope = report_scope(project, all)?;
 
     if show_claude {
         let summary = ingest::ai::ingest_claude_code(scope.as_ref(), None)?;
@@ -538,10 +677,11 @@ fn run_ai_report(
 
 fn run_energy_report(
     project: Option<&std::path::Path>,
+    all: bool,
     days: u32,
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let scope = optional_scope(project)?;
+    let scope = report_scope(project, all)?;
     let interval = Interval::last_days(days);
     let summary = ingest::ai::ingest_claude_code(scope.as_ref(), Some(&interval))?;
     if summary.session_count == 0 {
@@ -701,21 +841,22 @@ fn humanize_age(age: chrono::Duration) -> String {
 }
 
 fn run_retro_tokens(
-    hours: u32,
+    since: &str,
     project: Option<&std::path::Path>,
+    all: bool,
     json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let scope = optional_scope(project)?;
-    let interval = Interval::last_hours(hours);
+    let scope = report_scope(project, all)?;
+    let interval = Interval::since(since)?;
     let summary = ingest::ai::ingest_claude_code(scope.as_ref(), Some(&interval))?;
     let recent = summary.sessions;
 
     if recent.is_empty() {
-        eprintln!("No sessions active in the last {} hours.", hours);
+        eprintln!("No sessions active in {}.", interval.label());
         std::process::exit(1);
     }
 
-    eprintln!("{} session(s) active in the last {} hours", recent.len(), hours);
+    eprintln!("{} session(s) active in {}", recent.len(), interval.label());
 
     let retro = analysis::session_retro::analyze_token_retro(&recent);
 
@@ -726,8 +867,8 @@ fn run_retro_tokens(
 
     println!();
     println!(
-        "  Conscience \u{2014} Token Retrospective (last {} hours)",
-        hours
+        "  Conscience \u{2014} Token Retrospective ({})",
+        interval.label()
     );
     println!(
         "  {} sessions | {}K total tokens | ~{:.0} Wh estimated energy",
@@ -848,10 +989,12 @@ fn run_retro_tokens(
     Ok(())
 }
 
-async fn run_digest(
+
+async fn run_examine_all(
     days: u32,
-    output: Option<&std::path::Path>,
     json_output: bool,
+    markdown: bool,
+    output: Option<&std::path::Path>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let interval = Interval::last_days(days);
     let analysis = ethics::multi::analyze_all_projects(&interval).await?;
@@ -863,161 +1006,22 @@ async fn run_digest(
 
     if json_output {
         let json = serde_json::to_string_pretty(&analysis)?;
-        if let Some(path) = output {
-            std::fs::write(path, &json)?;
-            eprintln!("Digest written to {}", path.display());
-        } else {
-            println!("{}", json);
-        }
-        return Ok(());
-    }
-
-    let mut md = String::new();
-
-    use std::fmt::Write;
-    let _ = writeln!(md, "# Conscience Weekly Digest");
-    let _ = writeln!(md);
-    let _ = writeln!(
-        md,
-        "**Period:** {} days ending {} | **Projects:** {} | **Sessions:** {} | **Output tokens:** {}K",
-        days,
-        chrono::Utc::now().format("%Y-%m-%d"),
-        analysis.total_projects,
-        analysis.total_sessions,
-        analysis.total_output_tokens / 1_000,
-    );
-
-    // Rough energy from total output tokens using large-tier default (1.5 Wh/1K output)
-    let rough_energy_wh = analysis.total_output_tokens as f64 * 1.5 / 1000.0;
-    let _ = writeln!(md, "**Estimated energy:** ~{:.0} Wh (~{:.1} hours of laptop use)", rough_energy_wh, rough_energy_wh / 60.0);
-    let _ = writeln!(md);
-
-    // Top Concerns
-    let mut concerns: Vec<(&str, &ethics::models::Signal)> = Vec::new();
-    for project in &analysis.projects {
-        let name = project.project_name.as_deref().unwrap_or("unknown");
-        for signal in &project.analysis.signals {
-            if signal.severity >= ethics::models::Severity::Concern {
-                concerns.push((name, signal));
+        match output {
+            Some(path) => {
+                std::fs::write(path, &json)?;
+                eprintln!("Written to {}", path.display());
             }
+            None => println!("{}", json),
         }
-    }
-    for signal in &analysis.outlier_signals {
-        if signal.severity >= ethics::models::Severity::Concern {
-            concerns.push(("(cross-project)", signal));
+    } else if markdown {
+        let md = ethics::report::render_multi_project_markdown(&analysis, days);
+        match output {
+            Some(path) => {
+                std::fs::write(path, &md)?;
+                eprintln!("Digest written to {}", path.display());
+            }
+            None => print!("{}", md),
         }
-    }
-    concerns.sort_by_key(|(_, s)| std::cmp::Reverse(s.severity));
-
-    if concerns.is_empty() {
-        let _ = writeln!(md, "## No Concerns");
-        let _ = writeln!(md, "All projects are in healthy territory this period.");
-    } else {
-        let _ = writeln!(md, "## Top Concerns ({} signals)", concerns.len());
-        let _ = writeln!(md);
-        for (project, signal) in concerns.iter().take(10) {
-            let _ = writeln!(
-                md,
-                "- **{}** {} — {} [{}]",
-                signal.severity,
-                project,
-                signal.title,
-                signal.principle.name()
-            );
-            let _ = writeln!(md, "  {}", signal.detail);
-        }
-        if concerns.len() > 10 {
-            let _ = writeln!(md, "- ...and {} more", concerns.len() - 10);
-        }
-    }
-    let _ = writeln!(md);
-
-    // Healthy Patterns
-    let healthy: Vec<(&str, &ethics::models::Signal)> = analysis
-        .projects
-        .iter()
-        .flat_map(|p| {
-            let name = p.project_name.as_deref().unwrap_or("unknown");
-            p.analysis
-                .signals
-                .iter()
-                .filter(|s| s.severity == ethics::models::Severity::Healthy)
-                .map(move |s| (name, s))
-        })
-        .collect();
-
-    if !healthy.is_empty() {
-        let _ = writeln!(md, "## Healthy Patterns");
-        let _ = writeln!(md);
-        for (project, signal) in healthy.iter().take(5) {
-            let _ = writeln!(md, "- **{}** — {} [{}]", project, signal.title, signal.principle.name());
-        }
-        if healthy.len() > 5 {
-            let _ = writeln!(md, "- ...and {} more across projects", healthy.len() - 5);
-        }
-        let _ = writeln!(md);
-    }
-
-    // Per-project one-liners
-    let _ = writeln!(md, "## Project Summary");
-    let _ = writeln!(md);
-    let _ = writeln!(md, "| Project | Sessions | Tokens | Signals | Worst |");
-    let _ = writeln!(md, "|---------|----------|--------|---------|-------|");
-    for p in &analysis.projects {
-        let name = p.project_name.as_deref().unwrap_or("unknown");
-        let worst = p
-            .analysis
-            .signals
-            .iter()
-            .map(|s| s.severity)
-            .max()
-            .map(|s| format!("{}", s))
-            .unwrap_or_else(|| "—".to_string());
-        let _ = writeln!(
-            md,
-            "| {} | {} | {}K | {} | {} |",
-            name,
-            p.session_count,
-            p.total_output_tokens / 1_000,
-            p.analysis.signals.len(),
-            worst,
-        );
-    }
-    let _ = writeln!(md);
-
-    // Reflection
-    let _ = writeln!(md, "## Reflection");
-    let _ = writeln!(md);
-    let _ = writeln!(
-        md,
-        "Looking at the past {} days across {} projects: is the AI compute ({} sessions, \
-        ~{:.0} Wh estimated energy) proportionate to the value delivered? \
-        Are the concerns above worth investigating, or are they noise?",
-        days,
-        analysis.total_projects,
-        analysis.total_sessions,
-        rough_energy_wh,
-    );
-
-    if let Some(path) = output {
-        std::fs::write(path, &md)?;
-        eprintln!("Digest written to {}", path.display());
-    } else {
-        print!("{}", md);
-    }
-
-    Ok(())
-}
-
-async fn run_examine_all(
-    days: u32,
-    json_output: bool,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let interval = Interval::last_days(days);
-    let analysis = ethics::multi::analyze_all_projects(&interval).await?;
-
-    if json_output {
-        println!("{}", serde_json::to_string_pretty(&analysis)?);
     } else {
         ethics::report::print_multi_project_analysis(&analysis);
     }
@@ -1278,6 +1282,7 @@ async fn run_examine(
     days: u32,
     project: Option<&std::path::Path>,
     json_output: bool,
+    full: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Resolve the project and the interval once; both sources share them.
     let scope = project_scope(project)?;
@@ -1308,9 +1313,104 @@ async fn run_examine(
 
     if json_output {
         println!("{}", serde_json::to_string_pretty(&snapshot)?);
-    } else {
+    } else if full {
         ethics::report::print_ethical_analysis(&snapshot.analysis);
+    } else {
+        ethics::report::print_examine_brief(&snapshot);
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::*;
+
+    fn parse(args: &[&str]) -> Result<Cli, clap::Error> {
+        Cli::try_parse_from(std::iter::once("conscience").chain(args.iter().copied()))
+    }
+
+    #[test]
+    fn examine_variants_parse() {
+        assert!(matches!(
+            parse(&["examine"]).unwrap().command,
+            Commands::Examine { pr: None, all: false, full: false, .. }
+        ));
+        assert!(matches!(
+            parse(&["examine", "--pr", "org/repo#7", "--json"]).unwrap().command,
+            Commands::Examine { pr: Some(_), json: true, .. }
+        ));
+        assert!(matches!(
+            parse(&["examine", "--all", "--markdown", "--output", "d.md", "--days", "7"])
+                .unwrap()
+                .command,
+            Commands::Examine { all: true, markdown: true, output: Some(_), days: 7, .. }
+        ));
+        assert!(matches!(
+            parse(&["examine", "--full", "--repo", "org/repo"]).unwrap().command,
+            Commands::Examine { full: true, repo: Some(_), .. }
+        ));
+    }
+
+    #[test]
+    fn examine_rejects_contradictory_flags() {
+        assert!(parse(&["examine", "--pr", "x", "--all"]).is_err());
+        assert!(parse(&["examine", "--repo", "x", "--pr", "y"]).is_err());
+        assert!(parse(&["examine", "--all", "--project", "."]).is_err());
+        assert!(parse(&["examine", "--markdown"]).is_err(), "markdown requires --all");
+        assert!(parse(&["examine", "--all", "--output", "f"]).is_err(), "output requires --markdown");
+        assert!(parse(&["examine", "--full", "--json"]).is_err());
+    }
+
+    #[test]
+    fn report_subcommands_parse_with_project_or_all() {
+        assert!(matches!(
+            parse(&["report", "tokens", "--since", "90m"]).unwrap().command,
+            Commands::Report { source: ReportSource::Tokens { ref since, all: false, .. } } if since == "90m"
+        ));
+        assert!(matches!(
+            parse(&["report", "tokens"]).unwrap().command,
+            Commands::Report { source: ReportSource::Tokens { ref since, .. } } if since == "4h"
+        ));
+        assert!(matches!(
+            parse(&["report", "energy", "--all", "--days", "7"]).unwrap().command,
+            Commands::Report { source: ReportSource::Energy { all: true, days: 7, .. } }
+        ));
+        assert!(parse(&["report", "energy", "--all", "--project", "."]).is_err());
+        assert!(matches!(
+            parse(&["report", "authorship", "--repo", "o/r"]).unwrap().command,
+            Commands::Report { source: ReportSource::Authorship { .. } }
+        ));
+        assert!(matches!(
+            parse(&["report", "attention", "--html", "t.html"]).unwrap().command,
+            Commands::Report { source: ReportSource::Attention { html: Some(_), .. } }
+        ));
+        assert!(matches!(
+            parse(&["report", "ai", "--tool", "codex"]).unwrap().command,
+            Commands::Report { source: ReportSource::Ai { tool: Some(_), .. } }
+        ));
+    }
+
+    #[test]
+    fn deprecated_spellings_still_parse() {
+        assert!(matches!(parse(&["evaluate", "--pr", "o/r#1"]).unwrap().command, Commands::Evaluate { .. }));
+        assert!(matches!(parse(&["examine-all", "--days", "3"]).unwrap().command, Commands::ExamineAll { days: 3, .. }));
+        assert!(matches!(parse(&["digest"]).unwrap().command, Commands::Digest { days: 7, .. }));
+        assert!(matches!(parse(&["authorship", "--repo", "o/r"]).unwrap().command, Commands::Authorship { .. }));
+        assert!(matches!(parse(&["attention"]).unwrap().command, Commands::Attention { days: 7, .. }));
+        assert!(matches!(parse(&["retro-tokens", "--hours", "2"]).unwrap().command, Commands::RetroTokens { hours: 2, .. }));
+        assert!(matches!(parse(&["ingest", "claude-code"]).unwrap().command, Commands::Ingest { .. }));
+    }
+
+    #[test]
+    fn deprecated_and_ingest_commands_are_hidden_from_help() {
+        use clap::CommandFactory;
+        let cmd = Cli::command();
+        let visible: Vec<String> = cmd
+            .get_subcommands()
+            .filter(|c| !c.is_hide_set())
+            .map(|c| c.get_name().to_string())
+            .collect();
+        assert_eq!(visible, ["setup", "examine", "report", "reflect", "retro", "push"]);
+    }
 }

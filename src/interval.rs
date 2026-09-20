@@ -38,6 +38,40 @@ impl Interval {
         }
     }
 
+    /// A relative window ending now, from a short spec: `90m`, `4h`, `2d`,
+    /// `1w`. A bare number means hours.
+    pub fn since(spec: &str) -> std::result::Result<Self, String> {
+        let s = spec.trim();
+        let (num, unit) = match s.find(|c: char| !c.is_ascii_digit()) {
+            Some(i) => (&s[..i], s[i..].trim()),
+            None => (s, "h"),
+        };
+        let n: i64 = num
+            .parse()
+            .map_err(|_| format!("invalid duration '{}': expected e.g. 90m, 4h, 2d, 1w", spec))?;
+        if n <= 0 {
+            return Err(format!("invalid duration '{}': must be positive", spec));
+        }
+        let span = match unit {
+            "m" | "min" | "mins" | "minute" | "minutes" => Duration::minutes(n),
+            "h" | "hr" | "hrs" | "hour" | "hours" => Duration::hours(n),
+            "d" | "day" | "days" => Duration::days(n),
+            "w" | "wk" | "week" | "weeks" => Duration::weeks(n),
+            other => {
+                return Err(format!(
+                    "invalid duration unit '{}' in '{}': use m, h, d, or w",
+                    other, spec
+                ));
+            }
+        };
+        let now = Utc::now();
+        Ok(Self {
+            start: now - span,
+            end: now,
+            collected_at: now,
+        })
+    }
+
     /// An explicit range, e.g. a pull request's lifetime.
     pub fn between(start: DateTime<Utc>, end: DateTime<Utc>) -> Self {
         Self {
@@ -156,6 +190,24 @@ mod tests {
     #[test]
     fn undated_session_is_neither_in_nor_out() {
         assert_eq!(iv().covers_session(&session(None, None)), None);
+    }
+
+    #[test]
+    fn since_parses_common_specs_and_rejects_bad_ones() {
+        let secs = |s: &str| {
+            let iv = Interval::since(s).unwrap();
+            (iv.end - iv.start).num_seconds()
+        };
+        assert_eq!(secs("90m"), 90 * 60);
+        assert_eq!(secs("4h"), 4 * 3600);
+        assert_eq!(secs("4"), 4 * 3600, "bare number is hours");
+        assert_eq!(secs("2d"), 2 * 86_400);
+        assert_eq!(secs("1w"), 7 * 86_400);
+        assert_eq!(secs(" 3 hours "), 3 * 3600);
+        assert!(Interval::since("0h").is_err());
+        assert!(Interval::since("h").is_err());
+        assert!(Interval::since("4x").is_err());
+        assert!(Interval::since("").is_err());
     }
 
     #[test]
