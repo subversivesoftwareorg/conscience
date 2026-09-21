@@ -17,12 +17,17 @@ pub fn ingest_claude_code(
 ) -> Result<AiUsageSummary> {
     let parser = ClaudeCodeParser::new();
 
-    if !parser.detect() {
-        eprintln!("No Claude Code data found at {}", parser.data_path());
-        eprintln!("Claude Code stores session logs in ~/.claude/projects/");
-    } else {
-        eprintln!("Scanning Claude Code logs at {}", parser.data_path());
-    }
+    // Where the logs live is the same for every project in a run; say it
+    // once, not once per project when examine --all walks all of them.
+    static LOCATION_NOTED: std::sync::Once = std::sync::Once::new();
+    LOCATION_NOTED.call_once(|| {
+        if !parser.detect() {
+            eprintln!("No Claude Code data found at {}", parser.data_path());
+            eprintln!("Claude Code stores session logs in ~/.claude/projects/");
+        } else {
+            eprintln!("Scanning Claude Code logs at {}", parser.data_path());
+        }
+    });
 
     if let Some(s) = scope {
         let matched = parser.matching_project_dirs(s);
