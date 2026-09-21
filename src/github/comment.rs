@@ -122,7 +122,7 @@ pub fn render_pr_comment(export: &SnapshotExport, pr_number: u64) -> String {
         .coverage
         .sources
         .iter()
-        .any(|s| s.source == "claude_code" && s.status == SourceStatus::Collected);
+        .any(|s| s.source != "github" && s.status == SourceStatus::Collected);
     if !ai_collected {
         let pr_ref = match &export.project.github_repo {
             Some(repo) => format!("{}#{}", repo, pr_number),

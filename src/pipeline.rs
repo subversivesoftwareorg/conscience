@@ -152,34 +152,42 @@ pub async fn collect(req: CollectRequest<'_>) -> Result<Collected> {
         }
     };
 
-    let ai = match ingest::ai::ingest_claude_code(Some(req.scope), Some(&interval)) {
-        Ok(s) => {
-            coverage.ai_sessions_in_range = s.session_count;
-            coverage.ai_sessions_undated = s.undated_sessions;
-            let status = if s.session_count > 0 {
-                SourceStatus::Collected
+    // Every AI tool with data contributes; coverage gets one line per tool.
+    let ai = match ingest::ai::ingest_ai(Some(req.scope), Some(&interval)) {
+        Ok(ingested) => {
+            coverage.ai_sessions_in_range = ingested.summary.session_count;
+            coverage.ai_sessions_undated = ingested.summary.undated_sessions;
+            for t in &ingested.tools {
+                let (status, detail) = match (&t.error, t.detected, t.sessions_in_range) {
+                    (Some(e), _, _) => (SourceStatus::Failed, e.clone()),
+                    (None, false, _) => (SourceStatus::Unavailable, "no data on this machine".to_string()),
+                    (None, true, 0) => (
+                        SourceStatus::Unavailable,
+                        "no sessions in range for this project".to_string(),
+                    ),
+                    (None, true, n) => {
+                        let mut d = format!("{} sessions", n);
+                        if t.undated > 0 {
+                            d.push_str(&format!(", {} undated", t.undated));
+                        }
+                        (SourceStatus::Collected, d)
+                    }
+                };
+                coverage.sources.push(SourceCoverage {
+                    source: t.key.to_string(),
+                    status,
+                    detail,
+                });
+            }
+            if ingested.summary.session_count > 0 {
+                Some(ingested.summary)
             } else {
-                SourceStatus::Unavailable
-            };
-            let detail = if s.session_count > 0 {
-                let mut d = format!("{} sessions", s.session_count);
-                if s.undated_sessions > 0 {
-                    d.push_str(&format!(", {} undated", s.undated_sessions));
-                }
-                d
-            } else {
-                "no sessions in range for this project".into()
-            };
-            coverage.sources.push(SourceCoverage {
-                source: "claude_code".into(),
-                status,
-                detail,
-            });
-            if s.session_count > 0 { Some(s) } else { None }
+                None
+            }
         }
         Err(e) => {
             coverage.sources.push(SourceCoverage {
-                source: "claude_code".into(),
+                source: "ai".into(),
                 status: SourceStatus::Failed,
                 detail: e.to_string(),
             });

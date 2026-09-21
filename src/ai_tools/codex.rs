@@ -26,6 +26,12 @@ impl CodexParser {
         Self { codex_dir }
     }
 
+    /// Point the parser at a specific `.codex`-style directory instead of
+    /// the user's home. Used by tests with fixture trees.
+    pub fn with_dir(codex_dir: PathBuf) -> Self {
+        Self { codex_dir }
+    }
+
     fn sessions_dir(&self) -> PathBuf {
         self.codex_dir.join("sessions")
     }
@@ -225,8 +231,6 @@ impl AiToolParser for CodexParser {
             return Ok(AiUsageSummary::empty(AiTool::Codex));
         }
 
-        eprintln!("Scanning Codex sessions at {}", self.sessions_dir().display());
-
         let mut sessions = Vec::new();
 
         for path in &session_files {
@@ -252,11 +256,6 @@ impl AiToolParser for CodexParser {
         }
 
         let summary = AiUsageSummary::from_sessions(AiTool::Codex, sessions);
-
-        eprintln!(
-            "Found {} Codex session(s), {} total turns, {} output tokens",
-            summary.session_count, summary.total_turns.total, summary.total_tokens.output,
-        );
 
         Ok(summary)
     }

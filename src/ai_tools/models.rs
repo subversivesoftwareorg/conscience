@@ -13,6 +13,8 @@ pub enum AiTool {
     Windsurf,
     OpenClaw,
     NanoClaw,
+    /// A summary that merges sessions from more than one tool.
+    Mixed,
     Other(String),
 }
 
@@ -26,6 +28,7 @@ impl std::fmt::Display for AiTool {
             AiTool::Windsurf => write!(f, "Windsurf"),
             AiTool::OpenClaw => write!(f, "OpenClaw"),
             AiTool::NanoClaw => write!(f, "NanoClaw"),
+            AiTool::Mixed => write!(f, "AI tools (mixed)"),
             AiTool::Other(name) => write!(f, "{}", name),
         }
     }

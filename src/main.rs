@@ -770,9 +770,9 @@ fn run_energy_report(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let scope = report_scope(project, all)?;
     let interval = Interval::last_days(days);
-    let summary = ingest::ai::ingest_claude_code(scope.as_ref(), Some(&interval))?;
+    let summary = ingest::ai::ingest_ai(scope.as_ref(), Some(&interval))?.summary;
     if summary.session_count == 0 {
-        eprintln!("No Claude Code sessions found in the last {} days.", days);
+        eprintln!("No AI sessions found in the last {} days.", days);
         std::process::exit(1);
     }
 
@@ -804,10 +804,10 @@ async fn run_authorship(
     let interval = Interval::last_days(days);
     let github_summary = ingest::github::ingest_github(&repo, &interval).await?;
     let scope = optional_scope(project)?;
-    let ai_summary = ingest::ai::ingest_claude_code(scope.as_ref(), Some(&interval))?;
+    let ai_summary = ingest::ai::ingest_ai(scope.as_ref(), Some(&interval))?.summary;
 
     if ai_summary.session_count == 0 {
-        eprintln!("No Claude Code sessions found. Authorship analysis requires AI session data.");
+        eprintln!("No AI sessions found. Authorship analysis requires AI session data.");
         std::process::exit(1);
     }
 
@@ -830,9 +830,9 @@ async fn run_attention(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let scope = optional_scope(project)?;
     let interval = Interval::last_days(days);
-    let summary = ingest::ai::ingest_claude_code(scope.as_ref(), Some(&interval))?;
+    let summary = ingest::ai::ingest_ai(scope.as_ref(), Some(&interval))?.summary;
     if summary.session_count == 0 {
-        eprintln!("No Claude Code sessions found in the last {} days.", days);
+        eprintln!("No AI sessions found in the last {} days.", days);
         std::process::exit(1);
     }
 
@@ -959,7 +959,7 @@ fn run_retro_tokens(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let scope = report_scope(project, all)?;
     let interval = Interval::since(since)?;
-    let summary = ingest::ai::ingest_claude_code(scope.as_ref(), Some(&interval))?;
+    let summary = ingest::ai::ingest_ai(scope.as_ref(), Some(&interval))?.summary;
     let recent = summary.sessions;
 
     if recent.is_empty() {

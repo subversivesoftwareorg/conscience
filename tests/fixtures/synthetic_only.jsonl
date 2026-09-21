@@ -1,0 +1,2 @@
+{"type":"user","uuid":"u1","timestamp":"2026-09-01T16:40:34.873Z","isSidechain":false,"cwd":"/home/dev/projA","message":{"role":"user","content":"hello"}}
+{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-09-01T16:40:35.000Z","isSidechain":false,"message":{"id":"m1","model":"<synthetic>","role":"assistant","type":"message","content":[{"type":"text","text":"You've reached your limit."}],"usage":{"input_tokens":0,"output_tokens":0}}}

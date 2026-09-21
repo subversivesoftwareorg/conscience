@@ -39,3 +39,17 @@ fn human_turns_count_only_genuine_prompts() {
     assert_eq!(session.turns.assistant, 3);
     assert_eq!(session.turns.total, 5, "human + assistant");
 }
+
+#[test]
+fn synthetic_records_never_label_a_session() {
+    // Claude Code writes model "<synthetic>" for locally generated notices
+    // (API errors, limits). The first real model labels the session.
+    let session = parse_fixture("synthetic_first.jsonl");
+    assert_eq!(session.model.as_deref(), Some("claude-sonnet-4"));
+    assert_eq!(session.tokens.output, 900);
+
+    // A session that only ever saw notices has no model at all.
+    let session = parse_fixture("synthetic_only.jsonl");
+    assert_eq!(session.model, None);
+    assert_eq!(session.tokens.output, 0);
+}
