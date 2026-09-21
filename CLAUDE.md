@@ -184,6 +184,12 @@ conscience report tokens [--since 4h] [--project <path>|--all] [--json]   # 90m,
 conscience report authorship [--repo <owner/repo>] [--project <path>] [--days 30] [--json]
 conscience report attention [--days 7] [--project <path>] [--json] [--html <out.html>]  # all projects by default
 conscience report history [--project <path>] [--days 90] [--json]   # compare saved snapshots, like with like
+conscience report automation [--project <path>] [--days 90] [--json] # cron/launchd entries that invoke Claude, daemon jobs, program-launched runs, with what they produced
+
+# Remove the launcher behind a `report automation` entry (cron line, launchd
+# agent, daemon job). Shows the plan and asks; --dry-run only shows it. Session
+# logs are never touched; the previous crontab is saved under ~/.claude/pruned/.
+conscience prune <id> [--dry-run] [--yes]
 
 # Reflection questions for team retrospectives (works with zero data; data enriches)
 # --interactive answers each question at a prompt and prints a session summary

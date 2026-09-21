@@ -42,6 +42,7 @@ fn session(id: &str, start: Option<&str>, output_tokens: u64, human_turns: u64) 
         interactions: vec![],
         agent_dispatches: vec![],
         skill_invocations: vec![],
+        launch: Default::default(),
     }
 }
 

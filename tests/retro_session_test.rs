@@ -39,6 +39,7 @@ fn make_session_full(
         interactions: Vec::new(),
         agent_dispatches: agents,
         skill_invocations: skills,
+        launch: Default::default(),
     }
 }
 

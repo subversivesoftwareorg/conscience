@@ -1,5 +1,6 @@
 pub mod ai_tools;
 pub mod analysis;
+pub mod automation;
 pub mod config;
 pub mod dashboard;
 pub mod error;

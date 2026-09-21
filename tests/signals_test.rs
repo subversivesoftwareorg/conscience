@@ -85,6 +85,7 @@ fn make_ai_session(
         interactions: Vec::new(),
         agent_dispatches: Vec::new(),
         skill_invocations: Vec::new(),
+        launch: Default::default(),
     }
 }
 

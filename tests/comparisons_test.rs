@@ -208,6 +208,7 @@ fn energy_estimate_carries_comparisons_into_json() {
         interactions: vec![],
         agent_dispatches: vec![],
         skill_invocations: vec![],
+        launch: Default::default(),
     };
     let est =
         conscience::analysis::energy::estimate_total_energy(&[session], &EnergyConfig::default());
