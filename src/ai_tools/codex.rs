@@ -1,6 +1,7 @@
 use crate::ai_tools::models::*;
 use crate::ai_tools::parser::AiToolParser;
 use crate::error::{ConscienceError, Result};
+use crate::interval::Interval;
 use crate::project::ProjectScope;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -55,7 +56,14 @@ impl CodexParser {
         }
     }
 
-    fn parse_session(&self, path: &Path) -> Result<AiSession> {
+    /// Parse one session, counting only events inside `window` when given.
+    /// Codex records cumulative token usage, so the in-window figure is the
+    /// last usage inside the window minus the last usage before it.
+    fn parse_session_within(
+        &self,
+        path: &Path,
+        window: Option<&Interval>,
+    ) -> Result<Option<AiSession>> {
         let file = std::fs::File::open(path)
             .map_err(|e| ConscienceError::Other(anyhow::anyhow!("Failed to open {:?}: {}", path, e)))?;
         let reader = std::io::BufReader::new(file);
@@ -73,9 +81,12 @@ impl CodexParser {
         let mut bash_commands: Vec<String> = Vec::new();
         let mut human_turns = 0u64;
         let mut assistant_turns = 0u64;
-        let mut last_input_tokens = 0u64;
-        let mut last_output_tokens = 0u64;
-        let mut last_cached_tokens = 0u64;
+        // Cumulative usage: (input, output, cached) at the last event seen
+        // before the window, and at the last event inside it.
+        let mut usage_before = (0u64, 0u64, 0u64);
+        let mut usage_in = (0u64, 0u64, 0u64);
+        let mut dated_records = 0u64;
+        let mut in_window_records = 0u64;
 
         for line in reader.lines() {
             let line = match line {
@@ -94,14 +105,31 @@ impl CodexParser {
             let event_type = value.get("type").and_then(|v| v.as_str()).unwrap_or("");
             let payload = value.get("payload").unwrap_or(&Value::Null);
 
-            if let Some(ts) = value.get("timestamp").and_then(|v| v.as_str()) {
-                if let Ok(dt) = ts.parse::<DateTime<Utc>>() {
-                    if started_at.is_none() || dt < started_at.unwrap() {
-                        started_at = Some(dt);
-                    }
-                    if ended_at.is_none() || dt > ended_at.unwrap() {
-                        ended_at = Some(dt);
-                    }
+            let dt_opt = value
+                .get("timestamp")
+                .and_then(|v| v.as_str())
+                .and_then(|ts| ts.parse::<DateTime<Utc>>().ok());
+            let in_window = match (window, dt_opt) {
+                (None, _) => true,
+                (Some(w), Some(dt)) => w.contains(dt),
+                (Some(_), None) => false,
+            };
+            let before_window = match (window, dt_opt) {
+                (Some(w), Some(dt)) => dt < w.start,
+                _ => false,
+            };
+            if dt_opt.is_some() {
+                dated_records += 1;
+                if in_window {
+                    in_window_records += 1;
+                }
+            }
+            if let (Some(dt), true) = (dt_opt, in_window) {
+                if started_at.is_none() || dt < started_at.unwrap() {
+                    started_at = Some(dt);
+                }
+                if ended_at.is_none() || dt > ended_at.unwrap() {
+                    ended_at = Some(dt);
                 }
             }
 
@@ -123,6 +151,9 @@ impl CodexParser {
                     }
                 }
                 "response_item" => {
+                    if !in_window {
+                        continue;
+                    }
                     let item = payload.get("item").unwrap_or(payload);
 
                     match item.get("role").and_then(|v| v.as_str()) {
@@ -153,24 +184,17 @@ impl CodexParser {
                     }
                 }
                 "event_msg" => {
-                    if let Some(info) = payload.get("info") {
-                        if let Some(usage) = info.get("total_token_usage") {
-                            last_input_tokens = usage
-                                .get("input_tokens")
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(0);
-                            last_output_tokens = usage
-                                .get("output_tokens")
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(0)
-                                + usage
-                                    .get("reasoning_output_tokens")
-                                    .and_then(|v| v.as_u64())
-                                    .unwrap_or(0);
-                            last_cached_tokens = usage
-                                .get("cached_input_tokens")
-                                .and_then(|v| v.as_u64())
-                                .unwrap_or(0);
+                    if let Some(usage) = payload.get("info").and_then(|i| i.get("total_token_usage")) {
+                        let get = |k: &str| usage.get(k).and_then(|v| v.as_u64()).unwrap_or(0);
+                        let snapshot = (
+                            get("input_tokens"),
+                            get("output_tokens") + get("reasoning_output_tokens"),
+                            get("cached_input_tokens"),
+                        );
+                        if before_window {
+                            usage_before = snapshot;
+                        } else if in_window {
+                            usage_in = snapshot;
                         }
                     }
                 }
@@ -178,9 +202,17 @@ impl CodexParser {
             }
         }
 
+        if window.is_some() && dated_records > 0 && in_window_records == 0 {
+            return Ok(None);
+        }
+
+        // In-window deltas of the cumulative counters.
+        let last_input_tokens = usage_in.0.saturating_sub(usage_before.0);
+        let last_output_tokens = usage_in.1.saturating_sub(usage_before.1);
+        let last_cached_tokens = usage_in.2.saturating_sub(usage_before.2);
         let net_input = last_input_tokens.saturating_sub(last_cached_tokens);
 
-        Ok(AiSession {
+        Ok(Some(AiSession {
             tool: AiTool::Codex,
             session_id,
             project_path,
@@ -209,7 +241,7 @@ impl CodexParser {
             agent_dispatches: Vec::new(),
             skill_invocations: Vec::new(),
             launch: Default::default(),
-        })
+        }))
     }
 }
 
@@ -227,6 +259,14 @@ impl AiToolParser for CodexParser {
     }
 
     fn parse(&self, scope: Option<&ProjectScope>) -> Result<AiUsageSummary> {
+        self.parse_within(scope, None)
+    }
+
+    fn parse_within(
+        &self,
+        scope: Option<&ProjectScope>,
+        window: Option<&Interval>,
+    ) -> Result<AiUsageSummary> {
         let session_files = self.find_session_files();
         if session_files.is_empty() {
             return Ok(AiUsageSummary::empty(AiTool::Codex));
@@ -235,8 +275,9 @@ impl AiToolParser for CodexParser {
         let mut sessions = Vec::new();
 
         for path in &session_files {
-            match self.parse_session(path) {
-                Ok(session) => {
+            match self.parse_session_within(path, window) {
+                Ok(None) => {}
+                Ok(Some(session)) => {
                     // Codex records the working directory per session; that is
                     // the only project identity available, so scope on it.
                     if let Some(s) = scope {

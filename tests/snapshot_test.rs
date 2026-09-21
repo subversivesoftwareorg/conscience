@@ -247,3 +247,35 @@ fn summary_mentions_id_interval_coverage_and_counts() {
     assert!(s.contains("warnings"));
     assert!(s.contains("thresholds"));
 }
+
+#[test]
+fn pr_interval_starts_at_the_earliest_commit_when_that_is_before_opening() {
+    let opened: DateTime<Utc> = "2026-09-21T01:34:00Z".parse().unwrap();
+    let merged: DateTime<Utc> = "2026-09-21T01:40:00Z".parse().unwrap();
+    let commit = |at: &str| CommitSummary {
+        sha: "x".into(),
+        author: "a".into(),
+        message: "m".into(),
+        date: at.parse().unwrap(),
+        additions: None,
+        deletions: None,
+    };
+    let mut gh = RepoSummary {
+        owner: "o".into(),
+        repo: "r".into(),
+        period_start: opened,
+        period_end: merged,
+        commits: vec![commit("2026-09-20T22:10:00Z"), commit("2026-09-21T01:20:00Z")],
+        pull_requests: vec![],
+    };
+    let iv = pipeline::pr_interval(&gh);
+    assert_eq!(iv.start, "2026-09-20T22:10:00Z".parse::<DateTime<Utc>>().unwrap());
+    assert_eq!(iv.end, merged);
+
+    // Commits after opening (e.g. pushed to an existing PR) do not move the start.
+    gh.commits = vec![commit("2026-09-21T01:36:00Z")];
+    assert_eq!(pipeline::pr_interval(&gh).start, opened);
+    // No commits at all: the PR's own lifetime.
+    gh.commits.clear();
+    assert_eq!(pipeline::pr_interval(&gh).start, opened);
+}

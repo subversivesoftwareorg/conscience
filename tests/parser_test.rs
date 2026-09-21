@@ -53,3 +53,38 @@ fn synthetic_records_never_label_a_session() {
     assert_eq!(session.model, None);
     assert_eq!(session.tokens.output, 0);
 }
+
+#[test]
+fn a_window_counts_only_the_activity_inside_it() {
+    use conscience::interval::Interval;
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/basic_session.jsonl");
+    let parser = ClaudeCodeParser::new();
+    let full = parser.parse_session_file("s", &path).unwrap();
+    assert_eq!(full.turns.human, 2);
+
+    // Only the second prompt (u5 at 16:41:05) and what followed it.
+    let late = Interval::between(
+        "2026-09-01T16:41:00Z".parse().unwrap(),
+        "2026-09-01T16:42:00Z".parse().unwrap(),
+    );
+    let clipped = parser
+        .parse_session_file_within("s", &path, Some(&late))
+        .unwrap()
+        .expect("has activity in window");
+    assert_eq!(clipped.turns.human, 1);
+    assert!(clipped.turns.assistant < full.turns.assistant);
+    assert!(clipped.tokens.output < full.tokens.output);
+    assert!(clipped.tokens.output > 0);
+    assert_eq!(clipped.interactions.len(), 1);
+    assert!(clipped.started_at.unwrap() >= late.start, "span is the in-window span");
+    // Metadata is read from the whole file even when the record is outside.
+    assert_eq!(clipped.project_path.as_deref(), Some("/home/dev/projA"));
+    assert!(clipped.model.is_some());
+
+    // A window the session does not touch: it did not happen then.
+    let before = Interval::between(
+        "2026-09-01T10:00:00Z".parse().unwrap(),
+        "2026-09-01T11:00:00Z".parse().unwrap(),
+    );
+    assert!(parser.parse_session_file_within("s", &path, Some(&before)).unwrap().is_none());
+}

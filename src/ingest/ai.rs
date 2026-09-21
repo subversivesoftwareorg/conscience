@@ -89,7 +89,7 @@ fn run_parser(
             },
         );
     }
-    match parser.parse(scope) {
+    match parser.parse_within(scope, interval) {
         Ok(all) => {
             let sessions_all = all.session_count;
             let restricted = match interval {

@@ -3,6 +3,7 @@ use crate::ai_tools::models::*;
 use crate::ai_tools::models::{AgentActionsSummary, WorkCategory};
 use crate::ai_tools::parser::AiToolParser;
 use crate::error::{ConscienceError, Result};
+use crate::interval::Interval;
 use crate::project::ProjectScope;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -137,6 +138,17 @@ impl ClaudeCodeParser {
         self.parse_session(session_id, path)
     }
 
+    /// `parse_session_file` restricted to a window; `None` when the session
+    /// has timestamps but no activity inside it.
+    pub fn parse_session_file_within(
+        &self,
+        session_id: &str,
+        path: &Path,
+        window: Option<&Interval>,
+    ) -> Result<Option<AiSession>> {
+        self.parse_session_within(session_id, path, window)
+    }
+
     /// The text of a user record, whether content is a string or blocks.
     fn prompt_text(value: &Value) -> Option<String> {
         let content = value.get("message")?.get("content")?;
@@ -171,6 +183,23 @@ impl ClaudeCodeParser {
     }
 
     fn parse_session(&self, session_id: &str, path: &Path) -> Result<AiSession> {
+        // With no window every record counts, so a session is always produced.
+        Ok(self
+            .parse_session_within(session_id, path, None)?
+            .expect("unwindowed parse always yields a session"))
+    }
+
+    /// Parse one session, counting only records inside `window` when one is
+    /// given. Returns `None` when the session has timestamped records but
+    /// none inside the window: it did not happen then. A session with no
+    /// timestamps at all is returned as-is so the caller can report it as
+    /// undated rather than silently include or drop it.
+    fn parse_session_within(
+        &self,
+        session_id: &str,
+        path: &Path,
+        window: Option<&Interval>,
+    ) -> Result<Option<AiSession>> {
         let file = fs::File::open(path)
             .map_err(|e| ConscienceError::Other(anyhow::anyhow!("Failed to open {:?}: {}", path, e)))?;
         let reader = BufReader::new(file);
@@ -196,6 +225,8 @@ impl ClaudeCodeParser {
         let mut agent_dispatches: Vec<AgentDispatch> = Vec::new();
         let mut skill_invocations: Vec<SkillInvocation> = Vec::new();
         let mut launch = Launch::default();
+        let mut dated_records = 0u64;
+        let mut in_window_records = 0u64;
 
         for line in reader.lines() {
             let line = match line {
@@ -213,8 +244,25 @@ impl ClaudeCodeParser {
 
             let msg_type = value.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
-            if let Some(ts) = value.get("timestamp").and_then(|v| v.as_str()) {
-                if let Ok(dt) = ts.parse::<DateTime<Utc>>() {
+            let dt_opt = value
+                .get("timestamp")
+                .and_then(|v| v.as_str())
+                .and_then(|ts| ts.parse::<DateTime<Utc>>().ok());
+            // Records outside the window are read for metadata only.
+            let in_window = match (window, dt_opt) {
+                (None, _) => true,
+                (Some(w), Some(dt)) => w.contains(dt),
+                (Some(_), None) => false,
+            };
+            if dt_opt.is_some() {
+                dated_records += 1;
+                if in_window {
+                    in_window_records += 1;
+                }
+            }
+
+            if let Some(dt) = dt_opt {
+                if in_window {
                     if started_at.is_none() || dt < started_at.unwrap() {
                         started_at = Some(dt);
                     }
@@ -258,13 +306,15 @@ impl ClaudeCodeParser {
 
             match msg_type {
                 "user" => {
+                    if Self::is_human_prompt(&value) && launch.first_prompt.is_none() {
+                        launch.first_prompt = Self::prompt_text(&value);
+                    }
                     if value.get("isSidechain").and_then(|v| v.as_bool()).unwrap_or(false) {
                         // Sidechain user events are neither human nor machine
+                    } else if !in_window {
+                        // Outside the window: metadata only.
                     } else if Self::is_human_prompt(&value) {
                         human_turns += 1;
-                        if launch.first_prompt.is_none() {
-                            launch.first_prompt = Self::prompt_text(&value);
-                        }
                     } else {
                         machine_turns += 1;
                     }
@@ -285,7 +335,9 @@ impl ClaudeCodeParser {
                     if value.get("isSidechain").and_then(|v| v.as_bool()).unwrap_or(false) {
                         continue;
                     }
-                    assistant_turns += 1;
+                    if in_window {
+                        assistant_turns += 1;
+                    }
 
                     let msg = value.get("message").unwrap_or(&Value::Null);
 
@@ -298,6 +350,10 @@ impl ClaudeCodeParser {
                             .and_then(|v| v.as_str())
                             .filter(|m| *m != "<synthetic>")
                             .map(|s| s.to_string());
+                    }
+
+                    if !in_window {
+                        continue;
                     }
 
                     if let Some(usage) = msg.get("usage") {
@@ -364,7 +420,11 @@ impl ClaudeCodeParser {
             }
         }
 
-        Ok(AiSession {
+        if window.is_some() && dated_records > 0 && in_window_records == 0 {
+            return Ok(None);
+        }
+
+        Ok(Some(AiSession {
             tool: AiTool::ClaudeCode,
             session_id: session_id.to_string(),
             project_path,
@@ -393,7 +453,7 @@ impl ClaudeCodeParser {
             agent_dispatches,
             skill_invocations,
             launch,
-        })
+        }))
     }
 }
 
@@ -411,12 +471,21 @@ impl AiToolParser for ClaudeCodeParser {
     }
 
     fn parse(&self, scope: Option<&ProjectScope>) -> Result<AiUsageSummary> {
+        self.parse_within(scope, None)
+    }
+
+    fn parse_within(
+        &self,
+        scope: Option<&ProjectScope>,
+        window: Option<&Interval>,
+    ) -> Result<AiUsageSummary> {
         let session_files = self.find_session_files(scope);
         let mut sessions = Vec::new();
 
         for (session_id, path) in &session_files {
-            match self.parse_session(session_id, path) {
-                Ok(session) => sessions.push(session),
+            match self.parse_session_within(session_id, path, window) {
+                Ok(Some(session)) => sessions.push(session),
+                Ok(None) => {}
                 Err(e) => {
                     eprintln!("Warning: failed to parse session {}: {}", session_id, e);
                 }

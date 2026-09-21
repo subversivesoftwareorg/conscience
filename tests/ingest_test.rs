@@ -141,3 +141,40 @@ fn scope_filters_codex_by_cwd_too() {
     fs::remove_dir_all(&claude_root).ok();
     fs::remove_dir_all(&codex_root).ok();
 }
+
+#[test]
+fn codex_clips_cumulative_usage_to_the_window() {
+    use conscience::interval::Interval;
+    let codex_root = temp("codex-clip");
+    fake_codex(&codex_root);
+    let codex = CodexParser::with_dir(codex_root.clone());
+
+    // Everything in the fixture happens 10:00:00 to 10:00:11 on 2026-09-02.
+    let covering = Interval::between(
+        "2026-09-02T09:00:00Z".parse().unwrap(),
+        "2026-09-02T11:00:00Z".parse().unwrap(),
+    );
+    let s = codex.parse_within(None, Some(&covering)).unwrap();
+    assert_eq!(s.session_count, 1);
+    assert_eq!(s.total_tokens.output, 800, "output + reasoning output");
+    assert_eq!(s.total_turns.human, 1);
+
+    // A window ending before the usage event: turns may be in, tokens are not.
+    let early = Interval::between(
+        "2026-09-02T09:59:00Z".parse().unwrap(),
+        "2026-09-02T10:00:05Z".parse().unwrap(),
+    );
+    let s = codex.parse_within(None, Some(&early)).unwrap();
+    assert_eq!(s.session_count, 1);
+    assert_eq!(s.total_turns.human, 1);
+    assert_eq!(s.total_tokens.output, 0, "usage was recorded after the window");
+
+    // A window before the session: it did not happen then.
+    let none = Interval::between(
+        "2026-09-01T00:00:00Z".parse().unwrap(),
+        "2026-09-01T01:00:00Z".parse().unwrap(),
+    );
+    assert_eq!(codex.parse_within(None, Some(&none)).unwrap().session_count, 0);
+
+    fs::remove_dir_all(&codex_root).ok();
+}

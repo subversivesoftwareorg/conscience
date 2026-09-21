@@ -83,7 +83,7 @@ pub async fn collect(req: CollectRequest<'_>) -> Result<Collected> {
     let github = if let Some(pr) = req.pr {
         match ingest::github::ingest_pr(pr).await {
             Ok(s) => {
-                interval = Interval::between(s.period_start, s.period_end);
+                interval = pr_interval(&s);
                 coverage.github_commits = s.commits.len() as u64;
                 coverage.github_pull_requests = s.pull_requests.len() as u64;
                 coverage.sources.push(SourceCoverage {
@@ -201,6 +201,18 @@ pub async fn collect(req: CollectRequest<'_>) -> Result<Collected> {
         coverage,
         interval,
     })
+}
+
+/// The window a pull request's work happened in: from its earliest commit
+/// (or its opening, if earlier) to merge, close, or now. A PR opened and
+/// merged in six minutes still covers the hours of work that produced it.
+pub fn pr_interval(s: &RepoSummary) -> Interval {
+    let earliest_commit = s.commits.iter().map(|c| c.date).min();
+    let start = match earliest_commit {
+        Some(c) if c < s.period_start => c,
+        _ => s.period_start,
+    };
+    Interval::between(start, s.period_end)
 }
 
 /// Turn collected data into a snapshot: signals, scorecard, reflections,
