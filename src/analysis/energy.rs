@@ -54,6 +54,11 @@ pub struct EnergyEstimate {
     /// Everyday equivalents chosen for this estimate's scale.
     #[serde(default)]
     pub comparisons: crate::analysis::comparisons::Comparisons,
+    /// Sessions left out because no model produced output: API errors,
+    /// rate limits, empty sessions. They cost nothing and would only add
+    /// zero-Wh rows.
+    #[serde(default)]
+    pub excluded_sessions: u64,
 }
 
 struct TierDef {
@@ -76,6 +81,10 @@ fn tier_table() -> Vec<TierDef> {
         TierDef { prefix: "gpt-4.1-mini", tier: "medium", wh_per_1k_output: 0.5, wh_per_1k_input: 0.10, uncertainty_pct: 50.0, source_note: "Jegham 2025" },
         TierDef { prefix: "gemini-flash", tier: "small", wh_per_1k_output: 0.15, wh_per_1k_input: 0.03, uncertainty_pct: 50.0, source_note: "IEA 2025 (Gemini: 0.24 Wh/query)" },
         TierDef { prefix: "gpt-4", tier: "large", wh_per_1k_output: 1.5, wh_per_1k_input: 0.30, uncertainty_pct: 50.0, source_note: "Jegham 2025" },
+        // No published measurement exists for these; treated as GPT-4-class
+        // with doubled uncertainty. The tier name says so.
+        TierDef { prefix: "gpt-5", tier: "large (assumed)", wh_per_1k_output: 1.5, wh_per_1k_input: 0.30, uncertainty_pct: 100.0, source_note: "Assumed GPT-4-class; no published measurement for GPT-5" },
+        TierDef { prefix: "gpt-6", tier: "large (assumed)", wh_per_1k_output: 1.5, wh_per_1k_input: 0.30, uncertainty_pct: 100.0, source_note: "Assumed GPT-4-class; no published measurement for GPT-6" },
         TierDef { prefix: "o3", tier: "reasoning", wh_per_1k_output: 5.0, wh_per_1k_input: 0.60, uncertainty_pct: 150.0, source_note: "Jegham 2025 (o3: 7.03 Wh/short)" },
         TierDef { prefix: "o1", tier: "reasoning", wh_per_1k_output: 5.0, wh_per_1k_input: 0.60, uncertainty_pct: 150.0, source_note: "Jegham 2025 (o1: 4.45 Wh/short)" },
     ]
@@ -157,8 +166,13 @@ pub fn estimate_total_energy(sessions: &[AiSession], config: &EnergyConfig) -> E
     let mut total_wh = 0.0;
     let mut total_output_tokens = 0u64;
     let mut weighted_uncertainty_sum = 0.0;
+    let mut excluded_sessions = 0u64;
 
     for session in sessions {
+        if session.model.is_none() || session.tokens.total() == 0 {
+            excluded_sessions += 1;
+            continue;
+        }
         let model_name = session.model.clone().unwrap_or_else(|| "(unknown)".to_string());
         let coefficients = resolve_coefficients(&model_name, &config.overrides);
         let se = estimate_session_energy(session, &coefficients);
@@ -233,5 +247,6 @@ pub fn estimate_total_energy(sessions: &[AiSession], config: &EnergyConfig) -> E
         methodology: "Estimates based on Jegham et al. 2025, mdodkins 2026, Patterson et al. 2025. \
             Water: Li et al. 2023. No provider publishes official per-model energy or water data.".to_string(),
         comparisons,
+        excluded_sessions,
     }
 }

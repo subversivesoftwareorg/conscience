@@ -44,6 +44,17 @@ pub fn print_energy_report(estimate: &EnergyEstimate) {
         ]);
     }
     println!("{}", table);
+    if estimate.excluded_sessions > 0 {
+        println!(
+            "  {} session(s) produced no model output (API errors, rate limits, empty sessions) and are excluded.",
+            estimate.excluded_sessions
+        );
+    }
+    if estimate.per_model.iter().any(|m| m.tier.contains("assumed")) {
+        println!(
+            "  Tiers marked (assumed) have no published measurement; they are treated as GPT-4-class with doubled uncertainty."
+        );
+    }
 
     println!();
     println!("  Totals");

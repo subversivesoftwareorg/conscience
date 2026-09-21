@@ -1,0 +1,4 @@
+{"type":"user","uuid":"u1","timestamp":"2026-09-01T16:40:34.873Z","isSidechain":false,"cwd":"/home/dev/projA","message":{"role":"user","content":"please fix the bug"}}
+{"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-09-01T16:40:35.000Z","isSidechain":false,"message":{"id":"m1","model":"<synthetic>","role":"assistant","type":"message","content":[{"type":"text","text":"API Error: rate limited"}],"usage":{"input_tokens":0,"output_tokens":0}}}
+{"type":"user","uuid":"u2","timestamp":"2026-09-01T16:41:00.000Z","isSidechain":false,"cwd":"/home/dev/projA","message":{"role":"user","content":"try again"}}
+{"type":"assistant","uuid":"a2","parentUuid":"u2","timestamp":"2026-09-01T16:41:20.000Z","isSidechain":false,"message":{"id":"m2","model":"claude-sonnet-4","role":"assistant","type":"message","content":[{"type":"text","text":"Done."}],"usage":{"input_tokens":120,"output_tokens":900}}}

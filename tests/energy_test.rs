@@ -150,3 +150,31 @@ fn water_estimate_with_default_config() {
     assert!(est.water_liters.is_some());
     assert!((est.water_liters.unwrap() - 0.27).abs() < 0.01);
 }
+
+#[test]
+fn sessions_without_model_output_are_excluded_and_counted() {
+    let real = session_with("claude-sonnet-4", 0, 60_000, 0, 0);
+    let mut no_model = session_with("claude-sonnet-4", 0, 500, 0, 0);
+    no_model.model = None;
+    let empty = session_with("claude-opus-4-6", 0, 0, 0, 0);
+
+    let est = estimate_total_energy(&[real, no_model, empty], &EnergyConfig::default());
+    assert_eq!(est.excluded_sessions, 2);
+    assert_eq!(est.per_model.len(), 1, "only the session that produced output has a row");
+    assert_eq!(est.per_model[0].model, "claude-sonnet-4");
+    assert!((est.total_wh - 90.0).abs() < 1e-9, "excluded sessions add nothing");
+}
+
+#[test]
+fn gpt5_and_gpt6_use_an_explicitly_assumed_tier() {
+    let overrides = BTreeMap::new();
+    for model in ["gpt-5.5", "gpt-5-codex", "gpt-6-astra"] {
+        let c = resolve_coefficients(model, &overrides);
+        assert_eq!(c.tier, "large (assumed)", "{}", model);
+        assert_eq!(c.uncertainty_pct, 100.0, "{}", model);
+        assert!(c.source_note.contains("no published measurement"), "{}", model);
+        assert_eq!(c.wh_per_1k_output, 1.5);
+    }
+    // Existing GPT-4 handling is untouched.
+    assert_eq!(resolve_coefficients("gpt-4o", &overrides).tier, "large");
+}

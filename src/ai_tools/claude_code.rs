@@ -253,10 +253,14 @@ impl ClaudeCodeParser {
 
                     let msg = value.get("message").unwrap_or(&Value::Null);
 
+                    // Claude Code writes `"<synthetic>"` for messages it
+                    // generates locally (API errors, usage limits, refusals).
+                    // No model ran, so it must not label the session.
                     if model.is_none() {
                         model = msg
                             .get("model")
                             .and_then(|v| v.as_str())
+                            .filter(|m| *m != "<synthetic>")
                             .map(|s| s.to_string());
                     }
 
