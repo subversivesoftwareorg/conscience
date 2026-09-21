@@ -204,6 +204,14 @@ conscience retro [--dir <path>] [--days 30] [--json]
 # the machine (no paths, commands, or names in evidence); --show prints
 # exactly what would be sent and sends nothing.
 conscience push [<snapshot-id>] [--project <path>] [--endpoint <url>] [--show]
+
+# What conscience takes up on disk: what it wrote (snapshots, reflections,
+# config, prune backups) versus the AI tool logs it only reads and never
+# deletes, with the growth rate of snapshots. --tidy removes snapshots older
+# than --keep-days while always keeping the two most recent of each interval
+# length (what history compares); shows the plan and asks; --dry-run only shows.
+conscience du [--project <path> | --all] [--json]
+conscience du --tidy [--keep-days 90] [--dry-run] [--yes]
 ```
 
 Hidden but still accepted for one minor version, each printing a note:
