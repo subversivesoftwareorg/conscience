@@ -309,15 +309,32 @@ fn readings(
     out
 }
 
+/// Counts read as integers (`2`, not `2.00`); ratios keep a decimal or two.
 fn fmt_value(v: f64, unit: &str) -> String {
     if unit == "tokens" && v >= 1_000.0 {
         format!("{:.0}K", v / 1_000.0)
-    } else if v >= 100.0 {
+    } else if v.fract().abs() < 1e-9 || v >= 100.0 {
         format!("{:.0}", v)
     } else if v >= 10.0 {
         format!("{:.1}", v)
     } else {
         format!("{:.2}", v)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fmt_value;
+
+    #[test]
+    fn counts_are_integers_and_ratios_keep_decimals() {
+        assert_eq!(fmt_value(2.0, "sessions"), "2");
+        assert_eq!(fmt_value(3.0, "prs"), "3");
+        assert_eq!(fmt_value(0.0, "comments"), "0");
+        assert_eq!(fmt_value(20.04, "assistant_turns"), "20.0");
+        assert_eq!(fmt_value(1.5, "comments"), "1.50");
+        assert_eq!(fmt_value(2_653_000.0, "tokens"), "2653K");
+        assert_eq!(fmt_value(28_789.4, "Wh"), "28789");
     }
 }
 
