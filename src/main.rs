@@ -161,6 +161,17 @@ enum Commands {
         #[arg(long)]
         show: bool,
     },
+    /// Remove the launcher behind an entry from `report automation`; never touches session logs
+    Prune {
+        /// The id shown by `report automation`
+        id: String,
+        /// Show the plan and change nothing
+        #[arg(long)]
+        dry_run: bool,
+        /// Skip the confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
+    },
     /// Dump raw ingested data as JSON (debugging; not part of the ordinary workflow)
     #[command(hide = true)]
     Ingest {
@@ -323,6 +334,18 @@ enum ReportSource {
         #[arg(long)]
         json: bool,
     },
+    /// Work that runs without a person present: cron and launchd entries that invoke Claude, daemon jobs, and program-launched sessions
+    Automation {
+        /// Narrow to sessions in one project directory (default: the whole machine)
+        #[arg(long)]
+        project: Option<PathBuf>,
+        /// Only sessions started in the last N days
+        #[arg(long, default_value = "90")]
+        days: u32,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+    },
     /// Change over time: compares this project's saved snapshots, like with like
     History {
         /// Project directory (default: current directory)
@@ -440,7 +463,13 @@ async fn main() {
                 days,
                 json,
             } => run_history(project.as_deref(), days, json),
+            ReportSource::Automation {
+                project,
+                days,
+                json,
+            } => run_automation(project.as_deref(), days, json),
         },
+        Commands::Prune { id, dry_run, yes } => run_prune(&id, dry_run, yes),
         Commands::Reflect {
             repo,
             no_github,
@@ -937,6 +966,76 @@ fn run_history(
     } else {
         print!("{}", conscience::history::render(&history));
     }
+    Ok(())
+}
+
+fn discover_automation(
+    project: Option<&Path>,
+    days: u32,
+) -> Result<Vec<conscience::automation::Entry>, Box<dyn std::error::Error>> {
+    let scope = optional_scope(project)?;
+    let interval = Interval::last_days(days);
+    let summary = ingest::ai::ingest_ai(scope.as_ref(), Some(&interval))?.summary;
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    Ok(conscience::automation::discover(&summary.sessions, &home))
+}
+
+fn run_automation(
+    project: Option<&Path>,
+    days: u32,
+    json_output: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let entries = discover_automation(project, days)?;
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&entries)?);
+    } else {
+        print!("{}", conscience::automation::render(&entries));
+    }
+    Ok(())
+}
+
+fn run_prune(id: &str, dry_run: bool, yes: bool) -> Result<(), Box<dyn std::error::Error>> {
+    use conscience::automation::{apply, describe_action, plan};
+    let entries = discover_automation(None, 3650)?;
+    let matches: Vec<_> = entries.iter().filter(|e| e.id.starts_with(id)).collect();
+    let entry = match matches.as_slice() {
+        [one] => *one,
+        [] => return Err(format!("no automation entry with id '{}'; run `conscience report automation`", id).into()),
+        _ => return Err(format!("'{}' matches {} entries; give the full id", id, matches.len()).into()),
+    };
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let action = plan(entry, &home);
+
+    println!();
+    println!("  {}  [{}]  {}", entry.id, entry.source.kind(), entry.label);
+    for o in &entry.observations {
+        println!("         \u{2022} {}", o);
+    }
+    println!();
+    println!("  Plan: {}", describe_action(&action));
+    println!("  Session logs are not touched.");
+    println!();
+
+    if dry_run {
+        println!("  --dry-run: nothing changed.");
+        return Ok(());
+    }
+    if matches!(action, conscience::automation::PruneAction::NothingToRemove { .. }) {
+        return Err("nothing conscience can remove for this entry".into());
+    }
+    if !yes {
+        print!("  Proceed? [y/N] ");
+        use std::io::Write as _;
+        std::io::stdout().flush()?;
+        let mut answer = String::new();
+        std::io::stdin().read_line(&mut answer)?;
+        if !matches!(answer.trim().to_lowercase().as_str(), "y" | "yes") {
+            println!("  Left as is.");
+            return Ok(());
+        }
+    }
+    let outcome = apply(&action)?;
+    println!("  Done: {}", outcome);
     Ok(())
 }
 
@@ -1561,7 +1660,7 @@ mod cli_tests {
             .filter(|c| !c.is_hide_set())
             .map(|c| c.get_name().to_string())
             .collect();
-        assert_eq!(visible, ["setup", "examine", "report", "reflect", "retro", "push"]);
+        assert_eq!(visible, ["setup", "examine", "report", "reflect", "retro", "push", "prune"]);
     }
 
     #[test]

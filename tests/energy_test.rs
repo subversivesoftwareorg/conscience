@@ -23,6 +23,7 @@ fn session_with(model: &str, input: u64, output: u64, cache_create: u64, cache_r
         interactions: vec![],
         agent_dispatches: vec![],
         skill_invocations: vec![],
+        launch: Default::default(),
     }
 }
 

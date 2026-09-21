@@ -98,6 +98,31 @@ pub struct AiSession {
     pub agent_dispatches: Vec<AgentDispatch>,
     #[serde(default)]
     pub skill_invocations: Vec<SkillInvocation>,
+    /// How the session was started and whether it got anywhere. Lets
+    /// automation be told apart from a person at a terminal.
+    #[serde(default)]
+    pub launch: Launch,
+}
+
+/// Launch metadata Claude Code records on each session.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct Launch {
+    /// `cli` for a person at a terminal, `sdk-cli` for `claude -p` and the
+    /// Agent SDK, which is how cron jobs and scripts run it.
+    pub entrypoint: Option<String>,
+    /// `sdk` when the prompt came from a program rather than a person.
+    pub prompt_source: Option<String>,
+    /// The first human prompt, trimmed; the signature of a recurring job.
+    pub first_prompt: Option<String>,
+    /// The API error the session ended on, e.g. `authentication_failed`.
+    pub api_error: Option<String>,
+}
+
+impl Launch {
+    /// Started by a program rather than a person.
+    pub fn is_automated(&self) -> bool {
+        self.entrypoint.as_deref() == Some("sdk-cli") || self.prompt_source.as_deref() == Some("sdk")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

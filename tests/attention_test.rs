@@ -36,6 +36,7 @@ fn session(id: &str, project: &str, prompts: &[(i64, Option<i64>)]) -> AiSession
             .collect(),
         agent_dispatches: Vec::new(),
         skill_invocations: Vec::new(),
+        launch: Default::default(),
     }
 }
 

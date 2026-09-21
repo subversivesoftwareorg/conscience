@@ -269,6 +269,8 @@ pub const POLICIES: &[(&str, EvidencePolicy)] = &[
         "security_prompt_injection_pr",
         EvidencePolicy::Count("pull request(s)"),
     ),
+    // Automation: counts and error kinds only.
+    ("automation_failing_repeatedly", EvidencePolicy::Keep),
     // Agent actions: counts, except the channel list.
     ("agent_actions_unapproved", EvidencePolicy::Keep),
     (

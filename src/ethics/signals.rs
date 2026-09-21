@@ -39,8 +39,60 @@ pub fn detect_ai_signals(
     detect_sensitive_file_access(summary, &mut signals);
     detect_suspicious_bash(summary, &mut signals);
     detect_agent_action_concerns(summary, &mut signals);
+    detect_failing_automation(summary, &mut signals);
 
     signals
+}
+
+/// Recurring program-launched runs that never get anywhere: the same
+/// working directory and prompt, three or more times, every one ending in
+/// an API error or with no model output. Unattended automation that fails
+/// costs tokens and attention and produces nothing (MH 150 on unattended
+/// automation; MH 101 on cost without benefit).
+fn detect_failing_automation(summary: &AiUsageSummary, signals: &mut Vec<Signal>) {
+    use std::collections::BTreeMap;
+    let mut groups: BTreeMap<(String, String), (u64, u64, BTreeMap<String, u64>)> = BTreeMap::new();
+    for s in summary.sessions.iter().filter(|s| s.launch.is_automated()) {
+        let key = (
+            s.project_path.clone().unwrap_or_default(),
+            s.launch.first_prompt.clone().unwrap_or_default(),
+        );
+        let failed = s.launch.api_error.is_some() || (s.model.is_none() && s.tokens.total() == 0);
+        let g = groups.entry(key).or_default();
+        g.0 += 1;
+        if failed {
+            g.1 += 1;
+            *g.2.entry(s.launch.api_error.clone().unwrap_or_else(|| "no model output".into())).or_default() += 1;
+        }
+    }
+    let failing: Vec<_> = groups
+        .iter()
+        .filter(|(_, (runs, failures, _))| *runs >= 3 && failures == runs)
+        .collect();
+    if failing.is_empty() {
+        return;
+    }
+    let runs: u64 = failing.iter().map(|(_, (r, _, _))| r).sum();
+    let reasons: Vec<String> = failing
+        .iter()
+        .flat_map(|(_, (_, _, r))| r.keys().cloned())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .collect();
+    signals.push(Signal {
+        id: "automation_failing_repeatedly".to_string(),
+        principle: Principle::HumanAgency,
+        severity: Severity::Concern,
+        title: "Unattended automation failing repeatedly".to_string(),
+        detail: format!(
+            "{} recurring program-launched job(s) have run {} times without a single success ({}). \
+             Nothing was produced; tokens and energy were still spent. Run `conscience report automation` to see them.",
+            failing.len(),
+            runs,
+            reasons.join(", ")
+        ),
+        evidence: format!("{} job(s), {} failed run(s)", failing.len(), runs),
+    });
 }
 
 /// Detect signals from the conscience.yaml manifest itself.

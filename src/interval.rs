@@ -149,6 +149,7 @@ mod tests {
             interactions: vec![],
             agent_dispatches: vec![],
             skill_invocations: vec![],
+            launch: Default::default(),
         }
     }
 

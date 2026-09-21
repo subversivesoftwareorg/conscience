@@ -137,6 +137,24 @@ impl ClaudeCodeParser {
         self.parse_session(session_id, path)
     }
 
+    /// The text of a user record, whether content is a string or blocks.
+    fn prompt_text(value: &Value) -> Option<String> {
+        let content = value.get("message")?.get("content")?;
+        let text = match content {
+            Value::String(s) => s.clone(),
+            Value::Array(blocks) => blocks
+                .iter()
+                .filter_map(|b| {
+                    (b.get("type")?.as_str()? == "text").then(|| b.get("text")?.as_str().map(String::from))?
+                })
+                .collect::<Vec<_>>()
+                .join(" "),
+            _ => return None,
+        };
+        let t = text.trim();
+        (!t.is_empty()).then(|| t.chars().take(300).collect())
+    }
+
     fn is_human_prompt(value: &Value) -> bool {
         if value.get("isSidechain").and_then(|v| v.as_bool()).unwrap_or(false) {
             return false;
@@ -177,6 +195,7 @@ impl ClaudeCodeParser {
         let mut last_event_ts: Option<DateTime<Utc>> = None;
         let mut agent_dispatches: Vec<AgentDispatch> = Vec::new();
         let mut skill_invocations: Vec<SkillInvocation> = Vec::new();
+        let mut launch = Launch::default();
 
         for line in reader.lines() {
             let line = match line {
@@ -223,12 +242,29 @@ impl ClaudeCodeParser {
                 }
             }
 
+            // Launch metadata appears on most records; keep the first seen.
+            if launch.entrypoint.is_none() {
+                launch.entrypoint = value.get("entrypoint").and_then(|v| v.as_str()).map(String::from);
+            }
+            if launch.prompt_source.is_none() {
+                launch.prompt_source = value
+                    .get("promptSource")
+                    .and_then(|v| v.as_str())
+                    .map(String::from);
+            }
+            if let Some(err) = value.get("error").and_then(|v| v.as_str()) {
+                launch.api_error = Some(err.to_string());
+            }
+
             match msg_type {
                 "user" => {
                     if value.get("isSidechain").and_then(|v| v.as_bool()).unwrap_or(false) {
                         // Sidechain user events are neither human nor machine
                     } else if Self::is_human_prompt(&value) {
                         human_turns += 1;
+                        if launch.first_prompt.is_none() {
+                            launch.first_prompt = Self::prompt_text(&value);
+                        }
                     } else {
                         machine_turns += 1;
                     }
@@ -356,6 +392,7 @@ impl ClaudeCodeParser {
             interactions,
             agent_dispatches,
             skill_invocations,
+            launch,
         })
     }
 }

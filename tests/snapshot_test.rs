@@ -42,6 +42,7 @@ fn session(id: &str, start: DateTime<Utc>, output: u64, human: u64, assistant: u
         interactions: vec![],
         agent_dispatches: vec![],
         skill_invocations: vec![],
+        launch: Default::default(),
     }
 }
 
