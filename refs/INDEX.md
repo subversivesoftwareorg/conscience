@@ -36,9 +36,9 @@ Most comprehensive per-model energy benchmarks. Per-query Wh for Claude 3.7 Sonn
 
 ### Luccioni et al. (2024) — "Power Hungry Processing"
 **File:** `energy/Luccioni_2024_Power_Hungry_Processing.pdf` `[PDF]`
-**Source:** FAccT '24 (arXiv:2311.02468)
+**Source:** FAccT '24 (arXiv:2311.16863)
 
-Foundational inference energy methodology. Validates output:input energy ratio (10-30x per token at hardware level).
+Inference energy and carbon per 1,000 inferences for 88 models across 10 tasks on a single A100 without batching. Generative tasks cost about 10x discriminative ones; text generation 15x masked language modeling. Does not report a per-token output:input ratio (see `docs/analysis/2026-09-21-energy-coefficient-verification.md`).
 
 **Cited in:** energy accounting spec
 
@@ -50,10 +50,10 @@ Median 0.31 Wh per query for frontier models. Cross-validates Jegham benchmarks 
 **Cited in:** `src/analysis/energy.rs`, energy accounting spec
 
 ### de Vries (2023) — "The Growing Energy Footprint of Artificial Intelligence"
-**File:** `energy/de_Vries_2023_Growing_Energy_Footprint.pdf` `[PDF]`
-**Source:** Joule (arXiv:2311.16863)
+**File:** `energy/de_Vries_2023_Growing_Energy_Footprint.pdf` `[PDF]` (in-press commentary text)
+**Source:** Joule 7(10):2191–2194, doi:10.1016/j.joule.2023.09.004. No arXiv version.
 
-Macro-level projections: AI could consume 85-134 TWh annually by 2027 (0.5% of global electricity).
+Macro-level projection: NVIDIA AI servers shipping by 2027 could consume 85.4–134.0 TWh annually, assuming full utilization. A server-shipment estimate covering training and inference, not an inference-only figure.
 
 **Cited in:** energy accounting spec
 
