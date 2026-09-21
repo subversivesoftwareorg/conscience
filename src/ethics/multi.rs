@@ -107,6 +107,18 @@ pub async fn analyze_all_projects(interval: &Interval) -> Result<MultiProjectAna
     })
 }
 
+/// Real paths of every project this machine has Claude Code data for.
+pub fn discover_project_paths() -> Vec<PathBuf> {
+    let parser = ClaudeCodeParser::new();
+    if !parser.detect() {
+        return Vec::new();
+    }
+    discover_projects(&parser)
+        .into_iter()
+        .map(|(path, _)| PathBuf::from(path))
+        .collect()
+}
+
 fn discover_projects(parser: &ClaudeCodeParser) -> Vec<(String, String)> {
     let projects_dir = PathBuf::from(parser.data_path());
     let mut result = Vec::new();

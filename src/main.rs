@@ -106,7 +106,7 @@ enum Commands {
         #[arg(long, requires = "pr")]
         comment: bool,
     },
-    /// Diagnostic reports: github, ai, energy, tokens, authorship, attention, history
+    /// Diagnostic reports: github, ai, energy, tokens, authorship, attention, history, automation
     Report {
         #[command(subcommand)]
         source: ReportSource,
@@ -170,6 +170,30 @@ enum Commands {
         dry_run: bool,
         /// Skip the confirmation prompt
         #[arg(long, short = 'y')]
+        yes: bool,
+    },
+    /// What conscience takes up on disk: what it wrote (and may tidy) versus the logs it only reads
+    Du {
+        /// Project directory (default: current directory)
+        #[arg(long, conflicts_with = "all")]
+        project: Option<PathBuf>,
+        /// Every project with Claude Code data on this machine
+        #[arg(long)]
+        all: bool,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+        /// Remove old snapshots, keeping the two most recent of each interval length
+        #[arg(long)]
+        tidy: bool,
+        /// With --tidy: snapshots newer than this are always kept
+        #[arg(long, default_value = "90")]
+        keep_days: u32,
+        /// With --tidy: show the plan and change nothing
+        #[arg(long, requires = "tidy")]
+        dry_run: bool,
+        /// With --tidy: skip the confirmation prompt
+        #[arg(long, short = 'y', requires = "tidy")]
         yes: bool,
     },
     /// Dump raw ingested data as JSON (debugging; not part of the ordinary workflow)
@@ -470,6 +494,15 @@ async fn main() {
             } => run_automation(project.as_deref(), days, json),
         },
         Commands::Prune { id, dry_run, yes } => run_prune(&id, dry_run, yes),
+        Commands::Du {
+            project,
+            all,
+            json,
+            tidy,
+            keep_days,
+            dry_run,
+            yes,
+        } => run_du(project.as_deref(), all, json, tidy, keep_days, dry_run, yes),
         Commands::Reflect {
             repo,
             no_github,
@@ -1036,6 +1069,82 @@ fn run_prune(id: &str, dry_run: bool, yes: bool) -> Result<(), Box<dyn std::erro
     }
     let outcome = apply(&action)?;
     println!("  Done: {}", outcome);
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_du(
+    project: Option<&Path>,
+    all: bool,
+    json_output: bool,
+    tidy: bool,
+    keep_days: u32,
+    dry_run: bool,
+    yes: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use conscience::du;
+    let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
+    let roots: Vec<PathBuf> = if all {
+        let mut r = ethics::multi::discover_project_paths();
+        r.retain(|p| p.join(".conscience").is_dir());
+        r
+    } else {
+        vec![project_scope(project)?.root]
+    };
+
+    if tidy {
+        let plans: Vec<du::TidyPlan> = roots
+            .iter()
+            .map(|r| du::plan_tidy(r, keep_days))
+            .filter(|p| !p.remove.is_empty())
+            .collect();
+        if json_output {
+            println!("{}", serde_json::to_string_pretty(&plans)?);
+            return Ok(());
+        }
+        if plans.is_empty() {
+            println!();
+            println!(
+                "  Nothing to tidy: no snapshots older than {} days beyond the two most recent of each interval length.",
+                keep_days
+            );
+            println!();
+            return Ok(());
+        }
+        for p in &plans {
+            print!("{}", du::render_tidy(p, keep_days));
+        }
+        if dry_run {
+            println!("  --dry-run: nothing changed.");
+            return Ok(());
+        }
+        if !yes {
+            print!("  Proceed? [y/N] ");
+            use std::io::Write as _;
+            std::io::stdout().flush()?;
+            let mut answer = String::new();
+            std::io::stdin().read_line(&mut answer)?;
+            if !matches!(answer.trim().to_lowercase().as_str(), "y" | "yes") {
+                println!("  Left as is.");
+                return Ok(());
+            }
+        }
+        let mut total = 0u64;
+        let mut freed = 0u64;
+        for p in &plans {
+            total += du::apply_tidy(p)?;
+            freed += p.bytes_freed;
+        }
+        println!("  Done: removed {} snapshot(s), {} freed.", total, du::fmt_bytes(freed));
+        return Ok(());
+    }
+
+    let usage = du::measure(&roots, &home);
+    if json_output {
+        println!("{}", serde_json::to_string_pretty(&usage)?);
+    } else {
+        print!("{}", du::render(&usage));
+    }
     Ok(())
 }
 
@@ -1660,7 +1769,7 @@ mod cli_tests {
             .filter(|c| !c.is_hide_set())
             .map(|c| c.get_name().to_string())
             .collect();
-        assert_eq!(visible, ["setup", "examine", "report", "reflect", "retro", "push", "prune"]);
+        assert_eq!(visible, ["setup", "examine", "report", "reflect", "retro", "push", "prune", "du"]);
     }
 
     #[test]

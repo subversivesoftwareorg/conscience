@@ -3,6 +3,7 @@ pub mod analysis;
 pub mod automation;
 pub mod config;
 pub mod dashboard;
+pub mod du;
 pub mod error;
 pub mod ethics;
 pub mod export;
