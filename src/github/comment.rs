@@ -24,7 +24,7 @@ pub fn render_pr_comment(export: &SnapshotExport, pr_number: u64) -> String {
     let _ = writeln!(md);
     let _ = writeln!(
         md,
-        "Analyzed {} to {} (the PR's lifetime). Coverage: {}.",
+        "Analyzed {} to {} (from the PR's first commit to its merge, or now). Only AI activity inside that window is counted. Coverage: {}.",
         export.interval.start.format("%Y-%m-%d"),
         export.interval.end.format("%Y-%m-%d"),
         export
